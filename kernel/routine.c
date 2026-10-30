@@ -58,13 +58,17 @@ static __always_inline bool getpriority_should_swap(int who)
 	return true;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Winfinite-recursion"
+
 #if defined(__GNUC__) && !defined(__clang__)
 #define KEEP_SYMBOL_NO_TAIL __attribute__((used)) noinline __attribute__((optimize("no-optimize-sibling-calls")))
 #else
 #define KEEP_SYMBOL_NO_TAIL __attribute__((used)) noinline __attribute__((disable_tail_calls))
 #endif
 
-KEEP_SYMBOL_NO_TAIL struct user_struct *hook_find_user(kuid_t uid)
+KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 {
 	kuid_t n_uid = uid;
 	kuid_t dummy = { .val = 99999 };
@@ -72,15 +76,30 @@ KEEP_SYMBOL_NO_TAIL struct user_struct *hook_find_user(kuid_t uid)
 	if (getpriority_should_swap(*(int *)&uid))
 		n_uid = dummy;
 
-	return hook_find_user(n_uid); // void
+	return gphook_find_user(n_uid); // void
 }
+
+#pragma GCC diagnostic pop
 #undef KEEP_SYMBOL_NO_TAIL
 
+#define estimate_sz	(128 * 4)
 
+#define self_patch_hook(hook_fn, tgt) ({					\
+	uintptr_t hook_p = kernel_function_lookup(hook_fn);			\
+	int ret = arm64_b_or_bl_patch(hook_p, estimate_sz, hook_p, tgt);	\
+	pr_info("patch_hook: %s ret: %d \n", #hook_fn, ret);			\
+	ret;									\
+})
 
 static __init int getpriority_hook_init(void)
 {
+	uintptr_t symbol_addr = kernel_function_lookup("find_user");
+	if (!symbol_addr)
+		return -ENOENT;
 
+	int ret = self_patch_hook(gphook_find_user, symbol_addr);
+	if (ret)
+		return ret;
 
 	return 0;
 }

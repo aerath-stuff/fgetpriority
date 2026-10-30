@@ -25,14 +25,26 @@ static_assert(1 == 0, "ARM64 only!");
 #define is_seccomp_enabled() (!!current->seccomp.mode)
 #endif
 
-static bool compat_hook_enabled = true;
-
 #ifdef MODULE
 #define is_module true
 #else
 #define is_module false
 #endif
 
+static uintptr_t kallsyms_lookup_name_fn = 0x0;
+static __nocfi unsigned long __kallsyms_lookup_name(const char *name)
+{
+	return kallsyms_lookup_name_fn(name);
+}
+
+#ifdef CONFIG_MODULES
+#define kernel_function_lookup(name) __kallsyms_lookup_name(#name)
+#else
+#define kernel_function_lookup(name) ({ 						\
+	pr_info("kernel_function_lookup: %s addr: 0x%lx\n", #name, (uintptr_t)&name);	\
+	(uintptr_t)&name; 								\
+})
+#endif
 
 #include "arm64_branch_insn.h"
 #include "routine.c"
@@ -41,6 +53,7 @@ static int __init fgetpriority_init(void)
 {
 	pr_info("init: Hello World!\n");
 
+	getpriority_hook_init();
 	return 0;
 }
 
