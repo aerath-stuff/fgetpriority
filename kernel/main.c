@@ -105,19 +105,19 @@ static int __init fgetpriority_init(void)
 
 static void __exit fgetpriority_exit(void)
 {
-	// TODO: unload routine
+#ifndef MODULE
 	__builtin_trap();
 	__builtin_unreachable();
+#else
+	int r = getpriority_hook_exit();
+	if (r)
+		pr_info("%s: ret: %d \n", __func__, r);
 
-#ifdef MODULE
 	int ret = kobject_add(&THIS_MODULE->mkobj.kobj, mod_kobj_parent_backup, "%s", THIS_MODULE->name);
 	pr_info("kobject_add ret: %d\n", ret);
 	if (ret)
 		panic("kobj add failed!\n");
-
-	lkm_unload(nullptr);
 #endif
-
 }
 
 module_init(fgetpriority_init);

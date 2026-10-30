@@ -152,6 +152,46 @@ static __init int getpriority_hook_init(void)
 
 static int getpriority_hook_exit(void)
 {
-	// TODO: unload routine
+	uintptr_t symbol_addr = kallsyms_lookup_name("find_user");
+	if (!symbol_addr)
+		return -ENOENT;
+
+	uintptr_t hook_addr = (uintptr_t)&gphook_find_user;
+	if (!hook_addr)
+		return -ENOENT;
+
+	// restore callsites
+	uintptr_t callsite = syscall_lookup("sys_getpriority");
+	if (!callsite)
+		return -ENOENT;
+
+	int ret = arm64_b_or_bl_patch(callsite, estimate_sz, hook_addr, symbol_addr);
+	if (ret)
+		return ret;
+
+	callsite = syscall_lookup("sys_setpriority");
+	if (!callsite)
+		return -ENOENT;
+
+	ret = arm64_b_or_bl_patch(callsite, estimate_sz, hook_addr, symbol_addr);
+	if (ret)
+		return ret;
+
+	callsite = syscall_lookup("sys_ioprio_set");
+	if (!callsite)
+		return -ENOENT;
+
+	ret = arm64_b_or_bl_patch(callsite, estimate_sz, hook_addr, symbol_addr);
+	if (ret)
+		return ret;
+
+	callsite = syscall_lookup("sys_ioprio_get");
+	if (!callsite)
+		return -ENOENT;
+
+	ret = arm64_b_or_bl_patch(callsite, estimate_sz, hook_addr, symbol_addr);
+	if (ret)
+		return ret;
+
 	return 0;
 }
