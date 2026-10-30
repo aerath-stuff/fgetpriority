@@ -19,18 +19,6 @@ static_assert(1 == 0, "ARM64 only!");
 #define pr_fmt(fmt) "fgetpriority: " fmt
 #endif
 
-#ifdef TIF_SECCOMP
-#define is_seccomp_enabled() test_thread_flag(TIF_SECCOMP)
-#else
-#define is_seccomp_enabled() (!!current->seccomp.mode)
-#endif
-
-#ifdef MODULE
-#define is_module true
-#else
-#define is_module false
-#endif
-
 #ifdef MODULE
 static uintptr_t kallsyms_lookup_name_fn = 0x0;
 static __nocfi unsigned long __kallsyms_lookup_name(const char *name)
@@ -46,7 +34,6 @@ static inline __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], 
 	typeof(__aarch64_insn_patch_text) *fn = kallsyms_lookup_name("aarch64_insn_patch_text");
 	if (!fn)
 		return -ENOENT;
-
 	return fn(addrs, insns, cnt);
 }
 #define aarch64_insn_patch_text __aarch64_insn_patch_text
@@ -56,10 +43,11 @@ static inline __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsign
 	typeof(__aarch64_insn_gen_branch_imm) *fn = kallsyms_lookup_name("aarch64_insn_gen_branch_imm");
 	if (!fn)
 		return -ENOENT;
-
 	return fn(pc, addr, type);
 }
 #define aarch64_insn_gen_branch_imm __aarch64_insn_gen_branch_imm
+
+static struct kobject *mod_kobj_parent_backup = nullptr;
 #endif
 
 #ifdef CONFIG_MODULES
@@ -98,12 +86,15 @@ static int __init fgetpriority_init(void)
 #ifdef MODULE
 	char buf[KSYM_SYMBOL_LEN];
 	sprint_symbol_no_offset(buf, kallsyms_lookup_name_fn);
-	char ksym_c[] = "kallsyms_lookup_name";
-	if (!!strcmp(buf, ksym_c)) {
+	char ksym[] = "kallsyms_lookup_name";
+	if (!!strcmp(buf, ksym)) {
 		pr_info("init: wrong symbol!? %s found!\n", buf);
 		return -EAGAIN;
 	}
 	pr_info("kallsyms_lookup_name: 0x%lx\n", kallsyms_lookup_name_fn);
+
+	mod_kobj_parent_backup = THIS_MODULE->mkobj.kobj.parent;
+	kobject_del(&THIS_MODULE->mkobj.kobj);
 #endif
 
 	int ret = getpriority_hook_init();
@@ -117,6 +108,16 @@ static void __exit fgetpriority_exit(void)
 	// TODO: unload routine
 	__builtin_trap();
 	__builtin_unreachable();
+
+#ifdef MODULE
+	int ret = kobject_add(&THIS_MODULE->mkobj.kobj, mod_kobj_parent_backup, "%s", THIS_MODULE->name);
+	pr_info("kobject_add ret: %d\n", ret);
+	if (ret)
+		panic("kobj add failed!\n");
+
+	lkm_unload(nullptr);
+#endif
+
 }
 
 module_init(fgetpriority_init);

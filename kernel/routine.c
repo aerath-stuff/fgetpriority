@@ -13,6 +13,12 @@
 
 static const int AID_USER_OFFSET = 100000;
 
+#ifdef TIF_SECCOMP
+#define is_seccomp_enabled() test_thread_flag(TIF_SECCOMP)
+#else
+#define is_seccomp_enabled() (!!current->seccomp.mode)
+#endif
+
 static __always_inline bool getpriority_should_swap(int who)
 {
 	if (unlikely(!is_seccomp_enabled()))
