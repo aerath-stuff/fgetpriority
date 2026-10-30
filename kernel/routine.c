@@ -92,9 +92,9 @@ KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 })
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
-#define syscall_lookup(name) kallsyms_lookup_retry("__arm64_" name)
+#define syscall_lookup(name) kallsyms_lookup_name("__arm64_" name)
 #else
-#define syscall_lookup(name) kallsyms_lookup_retry(name)
+#define syscall_lookup(name) kallsyms_lookup_name(name)
 #endif
 
 static __init int getpriority_hook_init(void)
@@ -113,28 +113,28 @@ static __init int getpriority_hook_init(void)
 		return -ENOENT;
 
 	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
-	pr_info("%s: ret: %d \n"__func__, ret);
+	pr_info("%s: ret: %d \n", __func__, ret);
 
 	callsite = syscall_lookup("sys_setpriority");
 	if (!callsite)
 		return -ENOENT;
 
 	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
-	pr_info("%s: ret: %d \n"__func__, ret);
+	pr_info("%s: ret: %d \n", __func__, ret);
 
 	callsite = syscall_lookup("sys_ioprio_set");
 	if (!callsite)
 		return -ENOENT;
 
 	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
-	pr_info("%s: ret: %d \n"__func__, ret);
+	pr_info("%s: ret: %d \n", __func__, ret);
 
 	callsite = syscall_lookup("sys_ioprio_get");
 	if (!callsite)
 		return -ENOENT;
 
 	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
-	pr_info("%s: ret: %d \n"__func__, ret);
+	pr_info("%s: ret: %d \n", __func__, ret);
 
 	return 0;
 }

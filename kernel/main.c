@@ -41,7 +41,7 @@ module_param(kallsyms_lookup_name_fn, ulong, 0000);
 MODULE_PARM_DESC(kallsyms_lookup_name_fn, "kallsyms_lookup_name symaddr");
 #define kallsyms_lookup_name __kallsyms_lookup_name
 
-static __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
+static inline __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
 {
 	typeof(__aarch64_insn_patch_text) *fn = kallsyms_lookup_name("aarch64_insn_patch_text");
 	if (!fn)
@@ -51,7 +51,7 @@ static __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt
 }
 #define aarch64_insn_patch_text __aarch64_insn_patch_text
 
-static __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsigned long addr, enum aarch64_insn_branch_type type)
+static inline __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsigned long addr, enum aarch64_insn_branch_type type)
 {
 	typeof(__aarch64_insn_gen_branch_imm) *fn = kallsyms_lookup_name("aarch64_insn_gen_branch_imm");
 	if (!fn)
@@ -103,7 +103,9 @@ static int __init fgetpriority_init(void)
 		pr_info("init: wrong symbol!? %s found!\n", buf);
 		return -EAGAIN;
 	}
+	pr_info("kallsyms_lookup_name: 0x%lx\n", kallsyms_lookup_name_fn);
 #endif
+
 	int ret = getpriority_hook_init();
 	pr_info("init: ret: %d\n", ret);
 
@@ -112,8 +114,9 @@ static int __init fgetpriority_init(void)
 
 static void __exit fgetpriority_exit(void)
 {
-//	__builtin_trap();
-//	__builtin_unreachable();
+	// TODO: unload routine
+	__builtin_trap();
+	__builtin_unreachable();
 }
 
 module_init(fgetpriority_init);
