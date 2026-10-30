@@ -82,13 +82,22 @@ KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 	if (getpriority_should_swap(*(int *)&uid))
 		n_uid = dummy;
 
-	return gphook_find_user(n_uid); // void
+	return gphook_find_user(n_uid);
 }
 
 #pragma GCC diagnostic pop
 #undef KEEP_SYMBOL_NO_TAIL
 
 #define estimate_sz	(128 * 4)
+
+#ifdef CONFIG_MODULES
+#define kernel_function_lookup(name) kallsyms_lookup_name(#name)
+#else
+#define kernel_function_lookup(name) ({ 						\
+	pr_info("kernel_function_lookup: %s addr: 0x%lx\n", #name, (uintptr_t)&name);	\
+	(uintptr_t)&name; 								\
+})
+#endif
 
 #define self_patch_hook(hook_fn, tgt) ({					\
 	uintptr_t hook_p = kernel_function_lookup(hook_fn);			\

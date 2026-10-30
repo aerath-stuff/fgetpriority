@@ -50,15 +50,6 @@ static inline __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsign
 static struct kobject *mod_kobj_parent_backup = nullptr;
 #endif
 
-#ifdef CONFIG_MODULES
-#define kernel_function_lookup(name) kallsyms_lookup_name(#name)
-#else
-#define kernel_function_lookup(name) ({ 						\
-	pr_info("kernel_function_lookup: %s addr: 0x%lx\n", #name, (uintptr_t)&name);	\
-	(uintptr_t)&name; 								\
-})
-#endif
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0) // probe_kernel_read
 __weak long copy_from_kernel_nofault(void *dst, const void *src, size_t size)
 {
