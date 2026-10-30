@@ -93,13 +93,15 @@ KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 
 static __init int getpriority_hook_init(void)
 {
-	uintptr_t symbol_addr = kernel_function_lookup("find_user");
+	uintptr_t symbol_addr = kallsyms_lookup_name("find_user");
 	if (!symbol_addr)
 		return -ENOENT;
 
 	int ret = self_patch_hook(gphook_find_user, symbol_addr);
 	if (ret)
 		return ret;
+
+// now patch hooksites
 
 	return 0;
 }

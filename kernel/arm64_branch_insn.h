@@ -23,7 +23,7 @@
 #include <asm/patching.h>
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0) || defined(MODULE)
 __weak s32 aarch64_get_branch_offset(u32 insn)
 {
 	// 26-bit signed relative jump offset

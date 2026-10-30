@@ -31,19 +31,61 @@ static_assert(1 == 0, "ARM64 only!");
 #define is_module false
 #endif
 
+#ifdef MODULE
 static uintptr_t kallsyms_lookup_name_fn = 0x0;
 static __nocfi unsigned long __kallsyms_lookup_name(const char *name)
 {
-	return kallsyms_lookup_name_fn(name);
+	return ((typeof (__kallsyms_lookup_name) *)kallsyms_lookup_name_fn)(name);
 }
+module_param(kallsyms_lookup_name_fn, ulong, 0000);
+MODULE_PARM_DESC(kallsyms_lookup_name_fn, "kallsyms_lookup_name symaddr");
+#define kallsyms_lookup_name __kallsyms_lookup_name
+
+static __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
+{
+	typeof(__aarch64_insn_patch_text) *fn = kallsyms_lookup_name("aarch64_insn_patch_text");
+	if (!fn)
+		return -ENOENT;
+
+	return fn(addrs, insns, cnt);
+}
+#define aarch64_insn_patch_text __aarch64_insn_patch_text
+
+static __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsigned long addr, enum aarch64_insn_branch_type type)
+{
+	typeof(__aarch64_insn_gen_branch_imm) *fn = kallsyms_lookup_name("aarch64_insn_gen_branch_imm");
+	if (!fn)
+		return -ENOENT;
+
+	return fn(pc, addr, type);
+}
+#define aarch64_insn_gen_branch_imm __aarch64_insn_gen_branch_imm
+#endif
 
 #ifdef CONFIG_MODULES
-#define kernel_function_lookup(name) __kallsyms_lookup_name(#name)
+#define kernel_function_lookup(name) kallsyms_lookup_name(#name)
 #else
 #define kernel_function_lookup(name) ({ 						\
 	pr_info("kernel_function_lookup: %s addr: 0x%lx\n", #name, (uintptr_t)&name);	\
 	(uintptr_t)&name; 								\
 })
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0) // probe_kernel_read
+__weak long copy_from_kernel_nofault(void *dst, const void *src, size_t size)
+{
+	// https://elixir.bootlin.com/linux/v5.2.21/source/mm/maccess.c#L27
+	long ret;
+	mm_segment_t old_fs = get_fs();
+
+	set_fs(KERNEL_DS);
+	pagefault_disable();
+	ret = __copy_from_user_inatomic(dst, (__force const void __user *)src, size);
+	pagefault_enable();
+	set_fs(old_fs);
+
+	return ret ? -EFAULT : 0;
+}
 #endif
 
 #include "arm64_branch_insn.h"
@@ -53,14 +95,25 @@ static int __init fgetpriority_init(void)
 {
 	pr_info("init: Hello World!\n");
 
-	getpriority_hook_init();
+#ifdef MODULE
+	char buf[KSYM_SYMBOL_LEN];
+	sprint_symbol_no_offset(buf, kallsyms_lookup_name_fn);
+	char ksym_c[] = "kallsyms_lookup_name";
+	if (!!strcmp(buf, ksym_c)) {
+		pr_info("init: wrong symbol!? %s found!\n", buf);
+		return -EAGAIN;
+	}
+#endif
+	int ret = getpriority_hook_init();
+	pr_info("init: ret: %d\n", ret);
+
 	return 0;
 }
 
 static void __exit fgetpriority_exit(void)
 {
-	__builtin_trap();
-	__builtin_unreachable();
+//	__builtin_trap();
+//	__builtin_unreachable();
 }
 
 module_init(fgetpriority_init);
