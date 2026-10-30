@@ -119,30 +119,35 @@ static __init int getpriority_hook_init(void)
 		return -ENOENT;
 
 	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
-	pr_info("%s: ret: %d \n", __func__, ret);
+	if (ret)
+		return ret;
 
 	callsite = syscall_lookup("sys_setpriority");
 	if (!callsite)
 		return -ENOENT;
 
 	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
-	pr_info("%s: ret: %d \n", __func__, ret);
+	if (ret)
+		return ret;
 
 	callsite = syscall_lookup("sys_ioprio_set");
 	if (!callsite)
 		return -ENOENT;
 
 	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
-	pr_info("%s: ret: %d \n", __func__, ret);
+	if (ret)
+		return ret;
 
 	callsite = syscall_lookup("sys_ioprio_get");
 	if (!callsite)
 		return -ENOENT;
 
 	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
-	pr_info("%s: ret: %d \n", __func__, ret);
+	if (ret)
+		return ret;
 
-	return 0;
+	pr_info("%s: ok! \n", __func__);
+	return ret;
 }
 
 static int getpriority_hook_exit(void)
