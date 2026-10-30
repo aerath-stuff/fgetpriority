@@ -19,7 +19,7 @@ static_assert(1 == 0, "ARM64 only!");
 #define pr_fmt(fmt) "fgetpriority: " fmt
 #endif
 
-#ifdef MODULE
+#ifdef MODULE /* overrides for LKM */
 static uintptr_t kallsyms_lookup_name_fn = 0x0;
 static __nocfi unsigned long __kallsyms_lookup_name(const char *name)
 {
@@ -47,8 +47,44 @@ static inline __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsign
 }
 #define aarch64_insn_gen_branch_imm __aarch64_insn_gen_branch_imm
 
+static __nocfi void __kallsyms_lookup_size_offset(uintptr_t symaddr, unsigned long *sym_size, unsigned long *offset)
+{
+	// https://elixir.bootlin.com/linux/v7.2-rc4/source/kernel/kprobes.c#L1506
+	static typeof(kallsyms_lookup_size_offset) *fn __read_mostly;
+	static void *state = &&bootstrap;
+	goto *state;
+
+bootstrap:
+	*(void **)&fn = (void *)kallsyms_lookup_name("kallsyms_lookup_size_offset");
+	if (!!fn)
+		state = &&fn_ok;
+	else
+		state = &&no_fn;
+
+	goto *state;
+fn_ok:
+	fn(symaddr, sym_size, offset);
+	return;
+
+no_fn:
+	*sym_size = 0;
+	*offset = 0;
+}
+#define kallsyms_lookup_size_offset __kallsyms_lookup_size_offset
+
 static struct kobject *mod_kobj_parent_backup = nullptr;
-#endif
+#endif // MODULE
+
+static size_t get_ksym_size(uintptr_t symbol_addr, size_t retfail)
+{
+	unsigned long offset = 0;
+	unsigned long symbolsize = 0;
+
+	kallsyms_lookup_size_offset(symbol_addr, &symbolsize, &offset);
+	if (!symbolsize && !offset)
+		return retfail;
+	return symbolsize;
+}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0) // probe_kernel_read
 __weak long copy_from_kernel_nofault(void *dst, const void *src, size_t size)

@@ -88,7 +88,7 @@ KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 #pragma GCC diagnostic pop
 #undef KEEP_SYMBOL_NO_TAIL
 
-#define estimate_sz	(128 * 4)
+#define estimate_sz	(256 * 4)
 
 #ifdef CONFIG_MODULES
 #define kernel_function_lookup(name) kallsyms_lookup_name(#name)
@@ -101,7 +101,7 @@ KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 
 #define self_patch_hook(hook_fn, tgt) ({					\
 	uintptr_t hook_p = kernel_function_lookup(hook_fn);			\
-	int ret = arm64_b_or_bl_patch(hook_p, estimate_sz, hook_p, tgt);	\
+	int ret = arm64_b_or_bl_patch(hook_p, get_ksym_size(hook_p, estimate_sz), hook_p, tgt);	\
 	pr_info("patch_hook: %s ret: %d \n", #hook_fn, ret);			\
 	ret;									\
 })
@@ -127,7 +127,7 @@ static __init int getpriority_hook_init(void)
 	if (!callsite)
 		return -ENOENT;
 
-	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
+	ret = arm64_b_or_bl_patch(callsite, get_ksym_size(callsite, estimate_sz), symbol_addr, (uintptr_t)&gphook_find_user);
 	if (ret)
 		return ret;
 
@@ -135,7 +135,7 @@ static __init int getpriority_hook_init(void)
 	if (!callsite)
 		return -ENOENT;
 
-	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
+	ret = arm64_b_or_bl_patch(callsite, get_ksym_size(callsite, estimate_sz), symbol_addr, (uintptr_t)&gphook_find_user);
 	if (ret)
 		return ret;
 
@@ -143,7 +143,7 @@ static __init int getpriority_hook_init(void)
 	if (!callsite)
 		return -ENOENT;
 
-	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
+	ret = arm64_b_or_bl_patch(callsite, get_ksym_size(callsite, estimate_sz), symbol_addr, (uintptr_t)&gphook_find_user);
 	if (ret)
 		return ret;
 
@@ -151,7 +151,7 @@ static __init int getpriority_hook_init(void)
 	if (!callsite)
 		return -ENOENT;
 
-	ret = arm64_b_or_bl_patch(callsite, estimate_sz, symbol_addr, (uintptr_t)&gphook_find_user);
+	ret = arm64_b_or_bl_patch(callsite, get_ksym_size(callsite, estimate_sz), symbol_addr, (uintptr_t)&gphook_find_user);
 	if (ret)
 		return ret;
 
@@ -174,7 +174,7 @@ static int getpriority_hook_exit(void)
 	if (!callsite)
 		return -ENOENT;
 
-	int ret = arm64_b_or_bl_patch(callsite, estimate_sz, hook_addr, symbol_addr);
+	int ret = arm64_b_or_bl_patch(callsite, get_ksym_size(callsite, estimate_sz), hook_addr, symbol_addr);
 	if (ret)
 		return ret;
 
@@ -182,7 +182,7 @@ static int getpriority_hook_exit(void)
 	if (!callsite)
 		return -ENOENT;
 
-	ret = arm64_b_or_bl_patch(callsite, estimate_sz, hook_addr, symbol_addr);
+	ret = arm64_b_or_bl_patch(callsite, get_ksym_size(callsite, estimate_sz), hook_addr, symbol_addr);
 	if (ret)
 		return ret;
 
@@ -190,7 +190,7 @@ static int getpriority_hook_exit(void)
 	if (!callsite)
 		return -ENOENT;
 
-	ret = arm64_b_or_bl_patch(callsite, estimate_sz, hook_addr, symbol_addr);
+	ret = arm64_b_or_bl_patch(callsite, get_ksym_size(callsite, estimate_sz), hook_addr, symbol_addr);
 	if (ret)
 		return ret;
 
@@ -198,7 +198,7 @@ static int getpriority_hook_exit(void)
 	if (!callsite)
 		return -ENOENT;
 
-	ret = arm64_b_or_bl_patch(callsite, estimate_sz, hook_addr, symbol_addr);
+	ret = arm64_b_or_bl_patch(callsite, get_ksym_size(callsite, estimate_sz), hook_addr, symbol_addr);
 	if (ret)
 		return ret;
 
