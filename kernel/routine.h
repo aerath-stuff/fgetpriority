@@ -15,5 +15,8 @@
 
 static const int AID_USER_OFFSET = 100000;
 
+/* (uid_t)-1 is unmappable; unlike an isolated UID, it cannot own tasks. */
+#define HIDDEN_PRIORITY_UID (-1)
+
 static __init int getpriority_hook_init(void);
 static int getpriority_hook_exit(void);

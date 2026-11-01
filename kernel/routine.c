@@ -85,7 +85,7 @@ static int pre_arm64_setpriority(struct kprobe *p, struct pt_regs *regs)
 	int *p_who = (int *)&sc->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, false))
-		*p_who = 99999;
+		*p_who = HIDDEN_PRIORITY_UID;
 
 	return 0;
 }
@@ -98,7 +98,7 @@ static int pre_arm64_ioprio_set(struct kprobe *p, struct pt_regs *regs)
 	int *p_who = (int *)&sc->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, true))
-		*p_who = 99999;
+		*p_who = HIDDEN_PRIORITY_UID;
 
 	return 0;
 }
@@ -111,7 +111,7 @@ static int entry_arm64_getpriority(struct kretprobe_instance *ri, struct pt_regs
 	int *p_who = (int *)&sc->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, false))
-		sc->regs[1] = 99999;
+		sc->regs[1] = HIDDEN_PRIORITY_UID;
 
 	return 0;
 }
@@ -124,7 +124,7 @@ static int entry_arm64_ioprio_get(struct kretprobe_instance *ri, struct pt_regs 
 	int *p_who = (int *)&sc->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, true))
-		sc->regs[1] = 99999;
+		sc->regs[1] = HIDDEN_PRIORITY_UID;
 
 	return 0;
 }
@@ -231,7 +231,7 @@ asmlinkage __nocfi long hook_aarch64_setpriority(const struct pt_regs *regs)
 	int *p_who = (int *)&regs->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, false))
-		*p_who = 99999;
+		*p_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_aarch64_setpriority) *)aarch64_setpriority)(regs);
@@ -246,7 +246,7 @@ asmlinkage __nocfi long hook_aarch64_getpriority(const struct pt_regs *regs)
 	int *p_who = (int *)&regs->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, false))
-		*p_who = 99999;
+		*p_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_aarch64_getpriority) *)aarch64_getpriority)(regs);
@@ -260,7 +260,7 @@ asmlinkage __nocfi long hook_aarch64_ioprio_get(const struct pt_regs *regs)
 	int *p_who = (int *)&regs->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, true))
-		*p_who = 99999;
+		*p_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_aarch64_ioprio_get) *)aarch64_ioprio_get)(regs);
@@ -275,7 +275,7 @@ asmlinkage __nocfi long hook_aarch64_ioprio_set(const struct pt_regs *regs)
 	int *p_who = (int *)&regs->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, true))
-		*p_who = 99999;
+		*p_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_aarch64_ioprio_set) *)aarch64_ioprio_set)(regs);
@@ -289,7 +289,7 @@ asmlinkage __nocfi long hook_aarch64_setpriority(int which, int who, int niceval
 {
 	int new_who = who;
 	if (!!getpriority_should_swap(which, who, false))
-		new_who = 99999;
+		new_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_aarch64_setpriority) *)aarch64_setpriority)(which, new_who, niceval);
@@ -301,7 +301,7 @@ asmlinkage __nocfi long hook_aarch64_getpriority(int which, int who)
 {
 	int new_who = who;
 	if (!!getpriority_should_swap(which, who, false))
-		new_who = 99999;
+		new_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_aarch64_getpriority) *)aarch64_getpriority)(which, new_who);
@@ -313,7 +313,7 @@ asmlinkage __nocfi long hook_aarch64_ioprio_get(int which, int who)
 {
 	int new_who = who;
 	if (!!getpriority_should_swap(which, who, true))
-		new_who = 99999;
+		new_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_aarch64_ioprio_get) *)aarch64_ioprio_get)(which, new_who);
@@ -325,7 +325,7 @@ asmlinkage __nocfi long hook_aarch64_ioprio_set(int which, int who, int ioprio)
 {
 	int new_who = who;
 	if (!!getpriority_should_swap(which, who, true))
-		new_who = 99999;
+		new_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_aarch64_ioprio_set) *)aarch64_ioprio_set)(which, new_who, ioprio);
@@ -360,7 +360,7 @@ asmlinkage __nocfi long hook_armeabi_getpriority(const struct pt_regs *regs)
 	int *p_who = (int *)&regs->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, false))
-		*p_who = 99999;
+		*p_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_armeabi_getpriority) *)armeabi_getpriority)(regs);
@@ -375,7 +375,7 @@ asmlinkage __nocfi long hook_armeabi_setpriority(const struct pt_regs *regs)
 	int *p_who = (int *)&regs->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, false))
-		*p_who = 99999;
+		*p_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_armeabi_setpriority) *)armeabi_setpriority)(regs);
@@ -390,7 +390,7 @@ asmlinkage __nocfi long hook_armeabi_ioprio_get(const struct pt_regs *regs)
 	int *p_who = (int *)&regs->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, true))
-		*p_who = 99999;
+		*p_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_armeabi_ioprio_get) *)armeabi_ioprio_get)(regs);
@@ -405,7 +405,7 @@ asmlinkage __nocfi long hook_armeabi_ioprio_set(const struct pt_regs *regs)
 	int *p_who = (int *)&regs->regs[1];
 
 	if (!!getpriority_should_swap(which, *p_who, true))
-		*p_who = 99999;
+		*p_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_armeabi_ioprio_set) *)armeabi_ioprio_set)(regs);
@@ -420,7 +420,7 @@ asmlinkage __nocfi long hook_armeabi_getpriority(int which, int who)
 {
 	int new_who = who;
 	if (!!getpriority_should_swap(which, who, false))
-		new_who = 99999;
+		new_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_armeabi_getpriority) *)armeabi_getpriority)(which, new_who);
@@ -432,7 +432,7 @@ asmlinkage __nocfi long hook_armeabi_setpriority(int which, int who, int niceval
 {
 	int new_who = who;
 	if (!!getpriority_should_swap(which, who, false))
-		new_who = 99999;
+		new_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_armeabi_setpriority) *)armeabi_setpriority)(which, new_who, niceval);
@@ -444,7 +444,7 @@ asmlinkage __nocfi long hook_armeabi_ioprio_get(int which, int who)
 {
 	int new_who = who;
 	if (!!getpriority_should_swap(which, who, true))
-		new_who = 99999;
+		new_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_armeabi_ioprio_get) *)armeabi_ioprio_get)(which, new_who);
@@ -456,7 +456,7 @@ asmlinkage __nocfi long hook_armeabi_ioprio_set(int which, int who, int ioprio)
 {
 	int new_who = who;
 	if (!!getpriority_should_swap(which, who, true))
-		new_who = 99999;
+		new_who = HIDDEN_PRIORITY_UID;
 
 	if (is_module)
 		return ((typeof(hook_armeabi_ioprio_set) *)armeabi_ioprio_set)(which, new_who, ioprio);
