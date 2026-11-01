@@ -40,6 +40,7 @@ static bool compat_hook_enabled = true;
 #include "routine.c"
 
 #ifdef MODULE
+#if !IS_ENABLED(CONFIG_KPROBES)
 static unsigned long native_sct_param = 0x0;
 module_param(native_sct_param, ulong, 0000);
 MODULE_PARM_DESC(native_sct_param, "sys_call_table symaddr");
@@ -47,6 +48,7 @@ MODULE_PARM_DESC(native_sct_param, "sys_call_table symaddr");
 static unsigned long compat_sct_param = 0x0;
 module_param(compat_sct_param, ulong, 0000);
 MODULE_PARM_DESC(compat_sct_param, "sys_call_table symaddr");
+#endif
 
 static struct kobject *mod_kobj_parent_backup = nullptr;
 #endif
@@ -56,6 +58,7 @@ static int __init fgetpriority_init(void)
 	pr_info("init: Hello World!\n");
 
 #ifdef MODULE
+#if !IS_ENABLED(CONFIG_KPROBES)
 	native_sct = (uintptr_t)native_sct_param;
 	if (!native_sct)
 		return -EAGAIN;
@@ -85,12 +88,14 @@ static int __init fgetpriority_init(void)
 		compat_hook_enabled = false;
 	}
 	pr_info("init: %s: 0x%lx \n", buf, compat_sct);
-
 skip_compat:;
+#endif
+
 	mod_kobj_parent_backup = THIS_MODULE->mkobj.kobj.parent;
 	kobject_del(&THIS_MODULE->mkobj.kobj);
 
 #else /* ! MODULE */
+#if !IS_ENABLED(CONFIG_KPROBES)
 	native_sct = (uintptr_t)sys_call_table;
 	pr_info("init: sys_call_table: 0x%lx \n", native_sct);
 
@@ -104,7 +109,7 @@ skip_compat:;
 	compat_hook_enabled = false;
 	pr_info("init: compat_sys_call_table will be skipped!\n");
 #endif // CONFIG_COMPAT
-
+#endif // kernel 5.11-
 #endif /* ! MODULE */
 
 // debug, print sct

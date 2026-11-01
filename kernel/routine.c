@@ -8,10 +8,7 @@
  *
  */
 
-#define MIN_APP_PROCESS_UID      10000
-#define MIN_ISOLATED_PROCESS_UID 90000
-
-static const int AID_USER_OFFSET = 100000;
+#include "routine.h"
 
 static __always_inline bool getpriority_should_swap(int which, int who, const bool is_io)
 {
@@ -67,6 +64,152 @@ static __always_inline bool getpriority_should_swap(int which, int who, const bo
 	return true;
 }
 
+#if IS_ENABLED(CONFIG_KPROBES)
+#include <linux/kernel.h>
+#include <linux/ptrace.h>
+#include <linux/sched.h>
+#include <linux/kprobes.h>
+
+#define kp_is_registered(p) (!!((p)->addr))
+
+static __always_inline struct pt_regs *sc_regs(struct pt_regs *regs)
+{
+	return (struct pt_regs *)regs->regs[0];
+}
+
+static int pre_arm64_setpriority(struct kprobe *p, struct pt_regs *regs)
+{
+	struct pt_regs *sc = sc_regs(regs);
+
+	int which = sc->regs[0];
+	int *p_who = (int *)&sc->regs[1];
+
+	if (!!getpriority_should_swap(which, *p_who, false))
+		*p_who = 99999;
+
+	return 0;
+}
+
+static int pre_arm64_ioprio_set(struct kprobe *p, struct pt_regs *regs)
+{
+	struct pt_regs *sc = sc_regs(regs);
+
+	int which = sc->regs[0];
+	int *p_who = (int *)&sc->regs[1];
+
+	if (!!getpriority_should_swap(which, *p_who, true))
+		*p_who = 99999;
+
+	return 0;
+}
+
+static int entry_arm64_getpriority(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct pt_regs *sc = sc_regs(regs);
+
+	int which = sc->regs[0];
+	int *p_who = (int *)&sc->regs[1];
+
+	if (!!getpriority_should_swap(which, *p_who, false))
+		sc->regs[1] = 99999;
+
+	return 0;
+}
+
+static int entry_arm64_ioprio_get(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct pt_regs *sc = sc_regs(regs);
+
+	int which = sc->regs[0];
+	int *p_who = (int *)&sc->regs[1];
+
+	if (!!getpriority_should_swap(which, *p_who, true))
+		sc->regs[1] = 99999;
+
+	return 0;
+}
+
+static int ret_dummy(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	return 0;
+}
+
+#define kp_setter(suffix, name) { .symbol_name = "__arm64" #suffix "_sys_" #name, .pre_handler = pre_arm64_##name }
+#define kp_setter_native(name) kp_setter(, name)
+
+#define kp_getter(suffix, name) {						\
+	.kp.symbol_name = "__arm64" #suffix "_sys_" #name,	\
+	.entry_handler = entry_arm64_##name,				\
+	.handler = ret_dummy,								\
+	.maxactive = 128,									\
+	.data_size = 0,										\
+}
+#define kp_getter_native(name) kp_getter(, name)
+
+// native
+static struct kprobe kp_arm64_setpriority    = kp_setter_native(setpriority);
+static struct kprobe kp_arm64_ioprio_set     = kp_setter_native( ioprio_set);
+static struct kretprobe kp_arm64_getpriority = kp_getter_native(getpriority);
+static struct kretprobe kp_arm64_ioprio_get  = kp_getter_native( ioprio_get);
+
+static __always_inline int register_kprobe_log(struct kprobe *kp, const char *name)
+{
+	int ret = register_kprobe(kp);
+	pr_info("%s: register kprobe %s, ret: %d\n", __func__, name, ret);
+	return ret;
+}
+
+static __always_inline int register_kretprobe_log(struct kretprobe *kp, const char *name)
+{
+	int ret = register_kretprobe(kp);
+	pr_info("%s: register kretprobe %s, ret: %d\n", __func__, name, ret);
+	return ret;
+}
+
+static __always_inline void unregister_kprobe_log(struct kprobe *kp, const char *name)
+{
+	if (!kp_is_registered(kp)) return;
+	unregister_kprobe(kp);
+	pr_info("%s: unregister kprobe %s\n", __func__, name);
+}
+
+static __always_inline void unregister_kretprobe_log(struct kretprobe *kp, const char *name)
+{
+	if (!kp_is_registered(&kp->kp)) return;
+	unregister_kretprobe(kp);
+	pr_info("%s: unregister kretprobe %s\n", __func__, name);
+}
+
+static __init int getpriority_hook_init(void)
+{
+	int ret;
+
+	if ((ret = register_kprobe_log(&kp_arm64_setpriority, "setpriority"))  < 0) goto return_with;
+	if ((ret = register_kprobe_log(&kp_arm64_ioprio_set, "ioprio_set")) < 0) goto f2;
+	if ((ret = register_kretprobe_log(&kp_arm64_getpriority, "getpriority"))  < 0) goto f3;
+	if ((ret = register_kretprobe_log(&kp_arm64_ioprio_get, "ioprio_get")) < 0) goto f4;
+
+	goto return_with;
+
+f4: unregister_kretprobe(&kp_arm64_getpriority);
+f3: unregister_kprobe(&kp_arm64_ioprio_set);
+f2: unregister_kprobe(&kp_arm64_setpriority);
+
+return_with:
+	return ret;
+}
+
+static int getpriority_hook_exit(void)
+{
+	unregister_kprobe_log(&kp_arm64_setpriority, "setpriority");
+	unregister_kprobe_log(&kp_arm64_ioprio_set, "ioprio_set");
+	unregister_kretprobe_log(&kp_arm64_getpriority, "getpriority");
+	unregister_kretprobe_log(&kp_arm64_ioprio_get, "ioprio_get");
+
+	pr_info("%s: exit OK\n", __func__);
+	return 0;
+}
+#else // no kprobes
 // dummy
 static uintptr_t dummy = 0x0;
 
@@ -378,3 +521,4 @@ static int getpriority_hook_exit(void)
 
 	return 0;
 }
+#endif
