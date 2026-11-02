@@ -103,8 +103,15 @@ __weak long copy_from_kernel_nofault(void *dst, const void *src, size_t size)
 }
 #endif
 
+#include "routine.h"
 #include "arm64_branch_insn.h"
-#include "routine.c"
+#include "routine_raw.c"
+
+#ifdef CONFIG_KPROBES
+#include <linux/kprobes.h>
+#include "arch.h"
+#include "routine_kp.c"
+#endif
 
 static int __init fgetpriority_init(void)
 {
@@ -127,7 +134,14 @@ static int __init fgetpriority_init(void)
 	int ret = getpriority_hook_init();
 	pr_info("init: ret: %d\n", ret);
 
-	return 0;
+#ifdef CONFIG_KPROBES
+	if (!ret)
+		return ret;
+
+	pr_info("init: raw branch patching fail! falling back to kprobes!\n");
+	ret = getpriority_kp_init();
+#endif
+	return ret;
 }
 
 static void __exit fgetpriority_exit(void)
@@ -136,14 +150,18 @@ static void __exit fgetpriority_exit(void)
 	__builtin_trap();
 	__builtin_unreachable();
 #else
-	int r = getpriority_hook_exit();
-	if (r)
-		pr_info("%s: ret: %d \n", __func__, r);
-
 	int ret = kobject_add(&THIS_MODULE->mkobj.kobj, mod_kobj_parent_backup, "%s", THIS_MODULE->name);
 	pr_info("kobject_add ret: %d\n", ret);
 	if (ret)
 		panic("kobj add failed!\n");
+
+	int r = getpriority_hook_exit();
+	if (r)
+		pr_info("%s: ret: %d \n", __func__, r);
+
+#ifdef CONFIG_KPROBES
+	getpriority_kp_exit();
+#endif
 #endif
 }
 

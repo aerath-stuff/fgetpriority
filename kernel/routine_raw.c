@@ -7,12 +7,6 @@
  * published by the Free Software Foundation.
  *
  */
-
-#define MIN_APP_PROCESS_UID      10000
-#define MIN_ISOLATED_PROCESS_UID 90000
-
-static const int AID_USER_OFFSET = 100000;
-
 #ifdef TIF_SECCOMP
 #define is_seccomp_enabled() test_thread_flag(TIF_SECCOMP)
 #else
@@ -77,7 +71,7 @@ static __always_inline bool getpriority_should_swap(int who)
 KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 {
 	kuid_t n_uid = uid;
-	kuid_t dummy = { .val = 99999 };
+	kuid_t dummy = { .val = HIDDEN_PRIORITY_UID };
 
 	if (getpriority_should_swap(*(int *)&uid))
 		n_uid = dummy;

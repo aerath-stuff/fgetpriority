@@ -34,11 +34,14 @@
 #include <linux/compiler.h>
 #include <linux/init.h>
 #include <linux/ioprio.h>
+#include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/ptrace.h>
 #include <linux/resource.h>
 #include <linux/string.h>
 #include <linux/thread_info.h>
 #include <linux/stop_machine.h>
+#include <linux/sched.h>
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
