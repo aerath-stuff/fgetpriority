@@ -19,117 +19,114 @@ static_assert(1 == 0, "ARM64 only!");
 #define pr_fmt(fmt) "fgetpriority: " fmt
 #endif
 
-#ifdef TIF_SECCOMP
-#define is_seccomp_enabled() test_thread_flag(TIF_SECCOMP)
-#else
-#define is_seccomp_enabled() (!!current->seccomp.mode)
-#endif
+#ifdef MODULE /* overrides for LKM */
+static uintptr_t kallsyms_lookup_name_fn = 0x0;
+static __nocfi unsigned long __kallsyms_lookup_name(const char *name)
+{
+	return ((typeof (__kallsyms_lookup_name) *)kallsyms_lookup_name_fn)(name);
+}
+module_param(kallsyms_lookup_name_fn, ulong, 0000);
+MODULE_PARM_DESC(kallsyms_lookup_name_fn, "kallsyms_lookup_name symaddr");
+#define kallsyms_lookup_name __kallsyms_lookup_name
 
-static uintptr_t native_sct = 0x0;
-static uintptr_t compat_sct = 0x0;
+static inline __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
+{
+	typeof(__aarch64_insn_patch_text) *fn = kallsyms_lookup_name("aarch64_insn_patch_text");
+	if (!fn)
+		return -ENOENT;
+	return fn(addrs, insns, cnt);
+}
+#define aarch64_insn_patch_text __aarch64_insn_patch_text
 
-static bool compat_hook_enabled = true;
+static inline __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsigned long addr, enum aarch64_insn_branch_type type)
+{
+	typeof(__aarch64_insn_gen_branch_imm) *fn = kallsyms_lookup_name("aarch64_insn_gen_branch_imm");
+	if (!fn)
+		return -ENOENT;
+	return fn(pc, addr, type);
+}
+#define aarch64_insn_gen_branch_imm __aarch64_insn_gen_branch_imm
 
-#ifdef MODULE
-#define is_module true
-#else
-#define is_module false
-#endif
+static __nocfi void __kallsyms_lookup_size_offset(uintptr_t symaddr, unsigned long *sym_size, unsigned long *offset)
+{
+	// https://elixir.bootlin.com/linux/v7.2-rc4/source/kernel/kprobes.c#L1506
+	static typeof(kallsyms_lookup_size_offset) *fn __read_mostly;
+	static void *state = &&bootstrap;
+	goto *state;
 
-#include "vmap_patch.h"
-#include "routine.c"
+bootstrap:
+	*(void **)&fn = (void *)kallsyms_lookup_name("kallsyms_lookup_size_offset");
+	if (!!fn)
+		state = &&fn_ok;
+	else
+		state = &&no_fn;
 
-#ifdef MODULE
-#if !IS_ENABLED(CONFIG_KPROBES)
-static unsigned long native_sct_param = 0x0;
-module_param(native_sct_param, ulong, 0000);
-MODULE_PARM_DESC(native_sct_param, "sys_call_table symaddr");
+	goto *state;
+fn_ok:
+	fn(symaddr, sym_size, offset);
+	return;
 
-static unsigned long compat_sct_param = 0x0;
-module_param(compat_sct_param, ulong, 0000);
-MODULE_PARM_DESC(compat_sct_param, "sys_call_table symaddr");
-#endif
+no_fn:
+	*sym_size = 0;
+	*offset = 0;
+}
+#define kallsyms_lookup_size_offset __kallsyms_lookup_size_offset
 
 static struct kobject *mod_kobj_parent_backup = nullptr;
+#endif // MODULE
+
+static size_t get_ksym_size(uintptr_t symbol_addr, size_t retfail)
+{
+	unsigned long offset = 0;
+	unsigned long symbolsize = 0;
+
+	kallsyms_lookup_size_offset(symbol_addr, &symbolsize, &offset);
+	if (!symbolsize && !offset)
+		return retfail;
+	return symbolsize;
+}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0) // probe_kernel_read
+__weak long copy_from_kernel_nofault(void *dst, const void *src, size_t size)
+{
+	// https://elixir.bootlin.com/linux/v5.2.21/source/mm/maccess.c#L27
+	long ret;
+	mm_segment_t old_fs = get_fs();
+
+	set_fs(KERNEL_DS);
+	pagefault_disable();
+	ret = __copy_from_user_inatomic(dst, (__force const void __user *)src, size);
+	pagefault_enable();
+	set_fs(old_fs);
+
+	return ret ? -EFAULT : 0;
+}
 #endif
+
+#include "arm64_branch_insn.h"
+#include "routine.c"
 
 static int __init fgetpriority_init(void)
 {
 	pr_info("init: Hello World!\n");
 
 #ifdef MODULE
-#if !IS_ENABLED(CONFIG_KPROBES)
-	native_sct = (uintptr_t)native_sct_param;
-	if (!native_sct)
-		return -EAGAIN;
-
-	compat_sct = (uintptr_t)compat_sct_param;
-	if (!compat_sct) {
-		pr_info("init: compat_sys_call_table not supplied, will skip compat hooks\n");
-		compat_hook_enabled = false;
-	}
-
 	char buf[KSYM_SYMBOL_LEN];
-	sprint_symbol_no_offset(buf, native_sct);
-	char ksym_n[] = "sys_call_table";
-	if (!!strcmp(buf, ksym_n)) {
+	sprint_symbol_no_offset(buf, kallsyms_lookup_name_fn);
+	char ksym[] = "kallsyms_lookup_name";
+	if (!!strcmp(buf, ksym)) {
 		pr_info("init: wrong symbol!? %s found!\n", buf);
 		return -EAGAIN;
 	}
-	pr_info("init: %s: 0x%lx \n", buf, native_sct);
-
-	if (!compat_hook_enabled)
-		goto skip_compat;
-
-	sprint_symbol_no_offset(buf, compat_sct);
-	char ksym_c[] = "compat_sys_call_table";
-	if (!!strcmp(buf, ksym_c)) {
-		pr_info("init: wrong symbol!? %s found! will skip compat hooks!\n", buf);
-		compat_hook_enabled = false;
-	}
-	pr_info("init: %s: 0x%lx \n", buf, compat_sct);
-skip_compat:;
-#endif
+	pr_info("kallsyms_lookup_name: 0x%lx\n", kallsyms_lookup_name_fn);
 
 	mod_kobj_parent_backup = THIS_MODULE->mkobj.kobj.parent;
 	kobject_del(&THIS_MODULE->mkobj.kobj);
-
-#else /* ! MODULE */
-#if !IS_ENABLED(CONFIG_KPROBES)
-	native_sct = (uintptr_t)sys_call_table;
-	pr_info("init: sys_call_table: 0x%lx \n", native_sct);
-
-#ifdef CONFIG_COMPAT
-	#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
-	extern const void *compat_sys_call_table[];
-	#endif
-	compat_sct = (uintptr_t)compat_sys_call_table;
-	pr_info("init: compat_sys_call_table: 0x%lx \n", compat_sct);
-#else
-	compat_hook_enabled = false;
-	pr_info("init: compat_sys_call_table will be skipped!\n");
-#endif // CONFIG_COMPAT
-#endif // kernel 5.11-
-#endif /* ! MODULE */
-
-// debug, print sct
-//	print_sct();
+#endif
 
 	int ret = getpriority_hook_init();
-	if (ret)
-		panic("patching failed: %d\n", ret);
+	pr_info("init: ret: %d\n", ret);
 
-	pr_info("init: done!\n");
-	return 0;
-}
-
-static int lkm_unload(void *unused)
-{
-	int ret = getpriority_hook_exit();
-	if (ret)
-		panic("patching failed: %d\n", ret);
-
-	pr_info("exit: ok\n");
 	return 0;
 }
 
@@ -139,12 +136,14 @@ static void __exit fgetpriority_exit(void)
 	__builtin_trap();
 	__builtin_unreachable();
 #else
+	int r = getpriority_hook_exit();
+	if (r)
+		pr_info("%s: ret: %d \n", __func__, r);
+
 	int ret = kobject_add(&THIS_MODULE->mkobj.kobj, mod_kobj_parent_backup, "%s", THIS_MODULE->name);
 	pr_info("kobject_add ret: %d\n", ret);
 	if (ret)
 		panic("kobj add failed!\n");
-
-	lkm_unload(nullptr);
 #endif
 }
 

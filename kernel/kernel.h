@@ -294,12 +294,12 @@ typedef unsigned __int128 uint128_t;
 // scoped lock, mutex
 static inline void mutex_unlock_byref(struct mutex **m) { mutex_unlock(*m); }
 #define deferred_mutex_unlock(lock) struct mutex *__fgp_dummy_var __cleanup(mutex_unlock_byref) = (lock)
-#define guarded_mutex_lock(lock) ({ mutex_lock(lock); deferred_mutex_unlock(lock); 1; })
+#define guarded_mutex_lock(lock) mutex_lock(lock); deferred_mutex_unlock(lock)
 
 // scoped lock, spinlock
 static inline void spin_unlock_byref(spinlock_t **lock) { spin_unlock(*lock); }
 #define deferred_spin_unlock(lock) spinlock_t *__fgp_dummy_var __cleanup(spin_unlock_byref) = (lock)
-#define guarded_spin_lock(lock) ({ spin_lock(lock); deferred_spin_unlock(lock); 1; })
+#define guarded_spin_lock(lock) spin_lock(lock); deferred_spin_unlock(lock)
 
 // scoped allocations and basic stack offload.
 static inline void kfree_byref(void *buf) { kfree(*(void **)buf); }
