@@ -7,57 +7,6 @@
  * published by the Free Software Foundation.
  *
  */
-#ifdef TIF_SECCOMP
-#define is_seccomp_enabled() test_thread_flag(TIF_SECCOMP)
-#else
-#define is_seccomp_enabled() (!!current->seccomp.mode)
-#endif
-
-static __always_inline bool getpriority_should_swap(int who)
-{
-	if (unlikely(!is_seccomp_enabled()))
-		return false;
-
-	// only filter appuid calls
-	int cuid = current_uid().val;
-	if (unlikely(cuid < MIN_APP_PROCESS_UID || who < MIN_APP_PROCESS_UID))
-		return false;
-
-	if (unlikely(cuid >= AID_USER_OFFSET))
-		cuid %= AID_USER_OFFSET;
-
-	// convert all isolated processes to appuids
-	if (unlikely(cuid >= MIN_ISOLATED_PROCESS_UID))
-	{
-		struct user_namespace *ns = current_cred()->user_ns;
-		if (ns && ns != &init_user_ns)
-		{
-			kuid_t host_kuid = make_kuid(ns, 0);
-			if (uid_valid(host_kuid))
-				cuid = from_kuid(&init_user_ns, host_kuid);
-		}
-	}
-
-	if (unlikely(who >= MIN_ISOLATED_PROCESS_UID))
-	{
-		struct user_namespace *ns = current_cred()->user_ns;
-		if (ns && ns != &init_user_ns)
-		{
-			kuid_t host_kuid = make_kuid(ns, 0);
-			if (uid_valid(host_kuid))
-				who = from_kuid(&init_user_ns, host_kuid);
-		}
-	}
-
-	if (unlikely(who >= AID_USER_OFFSET))
-	    who %= AID_USER_OFFSET;
-
-	if (likely(cuid == who))
-		return false;
-
-	return true;
-}
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpragmas"
 #pragma GCC diagnostic ignored "-Winfinite-recursion"

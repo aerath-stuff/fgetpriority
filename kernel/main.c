@@ -29,7 +29,7 @@ module_param(kallsyms_lookup_name_fn, ulong, 0000);
 MODULE_PARM_DESC(kallsyms_lookup_name_fn, "kallsyms_lookup_name symaddr");
 #define kallsyms_lookup_name __kallsyms_lookup_name
 
-static inline __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
+static __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
 {
 	typeof(__aarch64_insn_patch_text) *fn = kallsyms_lookup_name("aarch64_insn_patch_text");
 	if (!fn)
@@ -38,7 +38,7 @@ static inline __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], 
 }
 #define aarch64_insn_patch_text __aarch64_insn_patch_text
 
-static inline __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsigned long addr, enum aarch64_insn_branch_type type)
+static __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsigned long addr, enum aarch64_insn_branch_type type)
 {
 	typeof(__aarch64_insn_gen_branch_imm) *fn = kallsyms_lookup_name("aarch64_insn_gen_branch_imm");
 	if (!fn)
@@ -47,33 +47,46 @@ static inline __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsign
 }
 #define aarch64_insn_gen_branch_imm __aarch64_insn_gen_branch_imm
 
-static __nocfi void __kallsyms_lookup_size_offset(uintptr_t symaddr, unsigned long *sym_size, unsigned long *offset)
+static __nocfi int __kallsyms_lookup_size_offset(uintptr_t symaddr, unsigned long *sym_size, unsigned long *offset)
 {
-	// https://elixir.bootlin.com/linux/v7.2-rc4/source/kernel/kprobes.c#L1506
-	static typeof(kallsyms_lookup_size_offset) *fn __read_mostly;
-	static void *state = &&bootstrap;
-	goto *state;
+	static typeof(__kallsyms_lookup_size_offset) *fn = nullptr;
+	static bool initialized = false;
 
-bootstrap:
-	*(void **)&fn = (void *)kallsyms_lookup_name("kallsyms_lookup_size_offset");
-	if (!!fn)
-		state = &&fn_ok;
-	else
-		state = &&no_fn;
+	if (!initialized) {
+		*(void **)&fn = (void *)kallsyms_lookup_name("kallsyms_lookup_size_offset");
+		initialized = true;
+	}
 
-	goto *state;
-fn_ok:
-	fn(symaddr, sym_size, offset);
-	return;
+	if (fn)
+		return fn(symaddr, sym_size, offset);
 
-no_fn:
 	*sym_size = 0;
 	*offset = 0;
+	return 0;
 }
 #define kallsyms_lookup_size_offset __kallsyms_lookup_size_offset
 
 static struct kobject *mod_kobj_parent_backup = nullptr;
 #endif // MODULE
+
+// override kprobe reg and unreg
+static __nocfi int __register_kprobe(struct kprobe *p)
+{
+	typeof(__register_kprobe) *fn = kallsyms_lookup_name("register_kprobe");
+	if (!fn)
+		return -ENOENT;
+	return fn(p);
+}
+#define register_kprobe __register_kprobe
+
+static __nocfi void __unregister_kprobe(struct kprobe *p)
+{
+	typeof(__unregister_kprobe) *fn = kallsyms_lookup_name("unregister_kprobe");
+	if (!fn)
+		return;
+	return fn(p);
+}
+#define unregister_kprobe __unregister_kprobe
 
 static size_t get_ksym_size(uintptr_t symbol_addr, size_t retfail)
 {
@@ -103,15 +116,11 @@ __weak long copy_from_kernel_nofault(void *dst, const void *src, size_t size)
 }
 #endif
 
-#include "routine.h"
-#include "arm64_branch_insn.h"
-#include "routine_raw.c"
-
-#ifdef CONFIG_KPROBES
-#include <linux/kprobes.h>
 #include "arch.h"
+#include "arm64_branch_insn.h"
+#include "routine.h"
 #include "routine_kp.c"
-#endif
+#include "routine_raw.c"
 
 static int __init fgetpriority_init(void)
 {
@@ -126,21 +135,27 @@ static int __init fgetpriority_init(void)
 		return -EAGAIN;
 	}
 	pr_info("kallsyms_lookup_name: 0x%lx\n", kallsyms_lookup_name_fn);
-
-	mod_kobj_parent_backup = THIS_MODULE->mkobj.kobj.parent;
-	kobject_del(&THIS_MODULE->mkobj.kobj);
 #endif
 
 	int ret = getpriority_hook_init();
 	pr_info("init: ret: %d\n", ret);
-
-#ifdef CONFIG_KPROBES
 	if (!ret)
-		return ret;
+		goto done;
 
 	pr_info("init: raw branch patching fail! falling back to kprobes!\n");
 	ret = getpriority_kp_init();
+	if (!ret)
+		goto done;
+
+	pr_info("init: kp fallback failed! ret: %d\n", ret);
+	return ret;
+
+done:;
+#ifdef MODULE
+	mod_kobj_parent_backup = THIS_MODULE->mkobj.kobj.parent;
+	kobject_del(&THIS_MODULE->mkobj.kobj);
 #endif
+	pr_info("init: ok!\n");
 	return ret;
 }
 
@@ -155,9 +170,8 @@ static void __exit fgetpriority_exit(void)
 	int r = getpriority_hook_exit();
 	if (r)
 		pr_info("%s: ret: %d \n", __func__, r);
-#ifdef CONFIG_KPROBES
+
 	getpriority_kp_exit();
-#endif
 	pr_info("exit: ignore rmmod dmesg splat. #notabug\n");
 	pr_info("exit: Goodbye!\n");
 	return;

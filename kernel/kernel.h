@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2026 \xx
@@ -35,6 +34,7 @@
 #include <linux/init.h>
 #include <linux/ioprio.h>
 #include <linux/kernel.h>
+#include <linux/kprobes.h>
 #include <linux/module.h>
 #include <linux/ptrace.h>
 #include <linux/resource.h>
