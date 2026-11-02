@@ -17,15 +17,26 @@
 #define KEEP_SYMBOL_NO_TAIL __attribute__((used)) noinline __attribute__((disable_tail_calls))
 #endif
 
+__asm__ (
+	"\n .text			"
+	"\n .p2align 2			"
+	"\n .global gp_free_uid		"
+	"\n gp_free_uid:		"
+	"\n brk #1			"
+);					
+
+KEEP_SYMBOL_NO_TAIL void gp_free_uid(struct user_struct *up);
 KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 {
-	kuid_t n_uid = uid;
-	kuid_t dummy = { .val = HIDDEN_PRIORITY_UID };
+	// we can actually return early if we want to
+	// but, this makes sure everything does the same work.
+	struct user_struct *ret = gphook_find_user(uid);
+	if (getpriority_should_swap(*(int *)&uid)) {
+		gp_free_uid(ret);
+		return nullptr;
+	}
 
-	if (getpriority_should_swap(*(int *)&uid))
-		n_uid = dummy;
-
-	return gphook_find_user(n_uid);
+	return ret;
 }
 
 #pragma GCC diagnostic pop
@@ -62,6 +73,14 @@ static __init int getpriority_hook_init(void)
 		return -ENOENT;
 
 	int ret = self_patch_hook(gphook_find_user, symbol_addr);
+	if (ret)
+		return ret;
+
+	uintptr_t symbol_addr2 = kallsyms_lookup_name("free_uid");
+	if (!symbol_addr2)
+		return -ENOENT;
+
+	ret = arm64_b_or_bl_patch(gphook_find_user, get_ksym_size(gphook_find_user, estimate_sz), kernel_function_lookup(gp_free_uid), (uintptr_t)symbol_addr2);
 	if (ret)
 		return ret;
 
