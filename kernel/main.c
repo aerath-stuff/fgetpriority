@@ -146,10 +146,7 @@ static int __init fgetpriority_init(void)
 
 static void __exit fgetpriority_exit(void)
 {
-#ifndef MODULE
-	__builtin_trap();
-	__builtin_unreachable();
-#else
+#ifdef MODULE
 	int ret = kobject_add(&THIS_MODULE->mkobj.kobj, mod_kobj_parent_backup, "%s", THIS_MODULE->name);
 	pr_info("kobject_add ret: %d\n", ret);
 	if (ret)
@@ -158,11 +155,17 @@ static void __exit fgetpriority_exit(void)
 	int r = getpriority_hook_exit();
 	if (r)
 		pr_info("%s: ret: %d \n", __func__, r);
-
 #ifdef CONFIG_KPROBES
 	getpriority_kp_exit();
 #endif
-#endif
+	pr_info("exit: ignore rmmod dmesg splat. #notabug\n");
+	pr_info("exit: Goodbye!\n");
+	return;
+
+#else /* ! MODULE */
+	__builtin_trap();
+	__builtin_unreachable();
+#endif /* ! MODULE */
 }
 
 module_init(fgetpriority_init);
