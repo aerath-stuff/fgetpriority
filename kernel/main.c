@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2026 \xx
@@ -25,9 +24,59 @@ static __nocfi unsigned long __kallsyms_lookup_name(const char *name)
 {
 	return ((typeof (__kallsyms_lookup_name) *)kallsyms_lookup_name_fn)(name);
 }
-module_param(kallsyms_lookup_name_fn, ulong, 0000);
-MODULE_PARM_DESC(kallsyms_lookup_name_fn, "kallsyms_lookup_name symaddr");
 #define kallsyms_lookup_name __kallsyms_lookup_name
+
+static int bootstrap_kallsyms_lookup_name(uintptr_t ptr)
+{
+	extern long copy_from_kernel_nofault(void *dst, const void *src, size_t size);
+
+	constexpr int max_iter = 100000;
+	constexpr char sym[] = "kallsyms_lookup_name+0x0/";
+	uintptr_t anchor = ptr;
+
+	char buf[KSYM_SYMBOL_LEN];
+	uint32_t ibuf;
+	int iter = 0;
+
+	uintptr_t curr = ptr;
+	bool up = true;
+
+	/**
+	 * radiating scan, expect some cache trashing.
+	 * however for this one it is worth it.
+	 */
+start_r:
+	if (iter >= max_iter) {
+		pr_info("%s: bootsrap fail! iter: %d\n", __func__, iter);
+		return -ERANGE;
+	}
+
+	if (!!copy_from_kernel_nofault(&ibuf, (void *)curr, sizeof(uint32_t)))
+		goto inc;
+
+	if (sprint_symbol(buf, curr) < sizeof(sym))
+		goto inc;
+
+	if (strstarts(buf, sym))
+		goto found;
+
+inc:
+	if (up) {
+		iter++;
+		curr = anchor + sizeof(uint32_t) * iter;
+		up = false;
+	} else {
+		curr = anchor - sizeof(uint32_t) * iter;
+		up = true;
+	}
+
+	goto start_r;
+
+found:
+	pr_info("%s: %s found at 0x%lx iter: %d\n", __func__, buf, curr, iter);
+	kallsyms_lookup_name_fn = curr;
+	return 0;
+}
 
 static __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
 {
@@ -127,14 +176,12 @@ static int __init fgetpriority_init(void)
 	pr_info("init: Hello World!\n");
 
 #ifdef MODULE
-	char buf[KSYM_SYMBOL_LEN];
-	sprint_symbol_no_offset(buf, kallsyms_lookup_name_fn);
-	char ksym[] = "kallsyms_lookup_name";
-	if (!!strcmp(buf, ksym)) {
-		pr_info("init: wrong symbol!? %s found!\n", buf);
-		return -EAGAIN;
-	}
-	pr_info("kallsyms_lookup_name: 0x%lx\n", kallsyms_lookup_name_fn);
+	constexpr char sym[] = "sprint_symbol";
+	uintptr_t addr = (uintptr_t)&sprint_symbol;
+	pr_info("%s: %s @ 0x%lx \n", __func__, sym, addr);
+	int err = bootstrap_kallsyms_lookup_name(addr);
+	if (err)
+		return err;
 #endif
 
 	int ret = getpriority_hook_init();
