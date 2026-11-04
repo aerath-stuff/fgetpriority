@@ -12,6 +12,5 @@ $(info -- MDIR: $(MDIR))
 
 modules:
 	make -C $(KDIR) M=$(MDIR) EXTRA_CFLAGS="-w" modules
-	cp $(MDIR)/$(MODULE_NAME).ko $(KO_INSTALL_DIR)/$(KMI)_arm64_$(MODULE_NAME).ko
 clean:
 	make -C $(KDIR) M=$(MDIR) clean

@@ -1,0 +1,89 @@
+name: Build
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'module/module.prop'
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 'Build module by using DDK'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        kmi: [
+          android12-5.10,
+          android13-5.10,
+          android13-5.15,
+          android14-5.15,
+          android14-6.1,
+          android15-6.6,
+          android16-6.12,
+          android17-6.18,
+        ]
+    container:
+      image: ghcr.io/ylarod/ddk:${{ matrix.kmi }}
+    if: ${{ !startsWith(github.event.head_commit.message, '[skip ci]') }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Build for ${{ matrix.kmi }}
+        run: |
+            cd kernel/
+            export KDIR=$KERNEL_SRC
+            make -f Makefile.ddk modules
+            mv fgetpriority.ko ${{ matrix.kmi }}_arm64_fgetpriority.ko
+
+      - name: Upload ${{ matrix.kmi }}
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          name: "${{ matrix.kmi }}_arm64_fgetpriority.ko"
+          path: kernel/${{ matrix.kmi }}_arm64_fgetpriority.ko
+          if-no-files-found: error
+
+  merge:
+    name: Create and upload module ZIP
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: "*_arm64_fgetpriority.ko"
+          path: module/ko
+          merge-multiple: true
+
+      - name: Create module ZIP
+        id: zip
+        run: |
+            cd module/
+            VERSION=$(grep version= module.prop | cut -f2 -d=)
+            echo VERSION=$VERSION >> $GITHUB_OUTPUT
+            zip -r fgetpriority_$VERSION.zip *
+
+      - name: Upload module ZIP
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          name: fgetpriority_${{ steps.zip.outputs.VERSION }}
+          path: module/fgetpriority_${{ steps.zip.outputs.VERSION }}.zip
+          if-no-files-found: error

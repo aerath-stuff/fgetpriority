@@ -35,6 +35,7 @@ do
 
     make -f Makefile.ddk clean
     make -f Makefile.ddk modules
+    cp fgetpriority.ko ${KO_INSTALL_DIR}/${KMI}_arm64_fgetpriority.ko
     make -f Makefile.ddk clean
 done
 
