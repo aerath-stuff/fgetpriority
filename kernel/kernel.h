@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2026 \xx
@@ -34,11 +33,15 @@
 #include <linux/compiler.h>
 #include <linux/init.h>
 #include <linux/ioprio.h>
+#include <linux/kernel.h>
+#include <linux/kprobes.h>
 #include <linux/module.h>
+#include <linux/ptrace.h>
 #include <linux/resource.h>
 #include <linux/string.h>
 #include <linux/thread_info.h>
 #include <linux/stop_machine.h>
+#include <linux/sched.h>
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
@@ -294,12 +297,12 @@ typedef unsigned __int128 uint128_t;
 // scoped lock, mutex
 static inline void mutex_unlock_byref(struct mutex **m) { mutex_unlock(*m); }
 #define deferred_mutex_unlock(lock) struct mutex *__fgp_dummy_var __cleanup(mutex_unlock_byref) = (lock)
-#define guarded_mutex_lock(lock) ({ mutex_lock(lock); deferred_mutex_unlock(lock); 1; })
+#define guarded_mutex_lock(lock) mutex_lock(lock); deferred_mutex_unlock(lock)
 
 // scoped lock, spinlock
 static inline void spin_unlock_byref(spinlock_t **lock) { spin_unlock(*lock); }
 #define deferred_spin_unlock(lock) spinlock_t *__fgp_dummy_var __cleanup(spin_unlock_byref) = (lock)
-#define guarded_spin_lock(lock) ({ spin_lock(lock); deferred_spin_unlock(lock); 1; })
+#define guarded_spin_lock(lock) spin_lock(lock); deferred_spin_unlock(lock)
 
 // scoped allocations and basic stack offload.
 static inline void kfree_byref(void *buf) { kfree(*(void **)buf); }

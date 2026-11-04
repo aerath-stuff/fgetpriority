@@ -7,9 +7,6 @@ if lsmod | grep -q fgetpriority; then
 	rmmod "$KO"
 fi
 
-kmaj=$(uname -r | cut -d. -f1)
-kmin=$(uname -r | cut -d. -f2)
-
-if ! insmod "$KO"; then
+if ! insmod "$KO" ; then
 	ksud insmod "$KO"
 fi
