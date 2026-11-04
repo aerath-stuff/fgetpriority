@@ -96,24 +96,49 @@ static __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsigned long
 }
 #define aarch64_insn_gen_branch_imm __aarch64_insn_gen_branch_imm
 
-static __nocfi int __kallsyms_lookup_size_offset(uintptr_t symaddr, unsigned long *sym_size, unsigned long *offset)
+/**
+ *  kallsyms_lookup_size_offset from sprint_symbol actually
+ */
+static int compat_kallsyms_lookup_size_offset(unsigned long addr, unsigned long *symbolsize, unsigned long *offset)
 {
-	static typeof(__kallsyms_lookup_size_offset) *fn = nullptr;
-	static bool initialized = false;
+	char buf[KSYM_SYMBOL_LEN];
+	unsigned long u_sz;
+	unsigned long u_off;
 
-	if (!initialized) {
-		*(void **)&fn = (void *)kallsyms_lookup_name("kallsyms_lookup_size_offset");
-		initialized = true;
-	}
+	if (!addr || !symbolsize || !offset)
+		return 0;
 
-	if (fn)
-		return fn(symaddr, sym_size, offset);
+	if (!(sprint_symbol(buf, addr) > 0))
+		return 0;		
+	
+//	pr_info("symbol is: %s \n", buf);
 
-	*sym_size = 0;
-	*offset = 0;
-	return 0;
+	char *c_sz = strchr(buf, '/');
+	if (!c_sz)
+		return 0;		
+
+	if (kstrtoul(c_sz + 1, 0, &u_sz))
+		return 0;		
+
+	// null '/', strtok called back.
+	c_sz[0] = 0;
+
+	char *c_off = strchr(buf, '+');
+	if (!c_off)
+		return 0;	
+
+	if (kstrtoul(c_off + 1, 0, &u_off))
+		return 0;		
+
+//	pr_info("symbol_size: %zu \n", u_sz);
+//	pr_info("symbol_offset: %zu \n", u_off);
+
+	*symbolsize = u_sz;
+	*offset = u_off;
+
+	return 1;
 }
-#define kallsyms_lookup_size_offset __kallsyms_lookup_size_offset
+#define kallsyms_lookup_size_offset compat_kallsyms_lookup_size_offset
 
 static struct kobject *mod_kobj_parent_backup = nullptr;
 #endif // MODULE
