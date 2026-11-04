@@ -1,6 +1,6 @@
 id=fgetpriority
 name=fgetpriority
-version=v0.0.2
-versionCode=2
+version=v0.0.3
+versionCode=3
 author=xx, frknkrc44
 description=A kernel module to hide some syscall results.
