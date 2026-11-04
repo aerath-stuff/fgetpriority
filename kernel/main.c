@@ -74,7 +74,8 @@ inc:
 
 found:
 	pr_info("%s: %s found at 0x%lx iter: %d\n", __func__, buf, curr, iter);
-	kallsyms_lookup_name_fn = curr;
+	*(volatile uintptr_t *)&kallsyms_lookup_name_fn = curr;
+	smp_mb();
 	return 0;
 }
 
