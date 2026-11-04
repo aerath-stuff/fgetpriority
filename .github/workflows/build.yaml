@@ -15,8 +15,6 @@ jobs:
   build:
     name: 'Build module by using DDK'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -60,6 +58,8 @@ jobs:
     name: Create and upload module ZIP
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -89,3 +89,14 @@ jobs:
           name: fgetpriority_${{ steps.zip.outputs.VERSION }}
           path: module/fgetpriority_${{ steps.zip.outputs.VERSION }}.zip
           if-no-files-found: error
+
+      - name: Upload to GitHub releases
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ steps.zip.outputs.VERSION }}
+          tag_name: ${{ steps.zip.outputs.VERSION }}
+          body: "${{ github.event.head_commit.message }}"
+          files: |
+            module/fgetpriority_${{ steps.zip.outputs.VERSION }}.zip
