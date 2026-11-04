@@ -17,6 +17,7 @@
 #define KEEP_SYMBOL_NO_TAIL __attribute__((used)) noinline __attribute__((disable_tail_calls))
 #endif
 
+#ifdef MODULE /* stub for free_uid() */
 __asm__ (
 	"\n .text			"
 	"\n .p2align 2			"
@@ -24,8 +25,13 @@ __asm__ (
 	"\n gp_free_uid:		"
 	"\n brk #1			"
 );					
-
 KEEP_SYMBOL_NO_TAIL void gp_free_uid(struct user_struct *up);
+
+#else /* ! MODULE */
+extern void free_uid(struct user_struct *);
+#define gp_free_uid free_uid
+#endif /* ! MODULE */
+
 KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 {
 	// we can actually return early if we want to
@@ -76,6 +82,7 @@ static __init int getpriority_hook_init(void)
 	if (ret)
 		return ret;
 
+#ifdef MODULE
 	uintptr_t symbol_addr2 = kallsyms_lookup_name("free_uid");
 	if (!symbol_addr2)
 		return -ENOENT;
@@ -83,6 +90,7 @@ static __init int getpriority_hook_init(void)
 	ret = arm64_b_or_bl_patch(gphook_find_user, get_ksym_size(gphook_find_user, estimate_sz), kernel_function_lookup(gp_free_uid), (uintptr_t)symbol_addr2);
 	if (ret)
 		return ret;
+#endif
 
 	// now patch callsites
 	uintptr_t callsite = syscall_lookup("sys_getpriority");
