@@ -31,7 +31,7 @@ static int bootstrap_kallsyms_lookup_name(uintptr_t ptr)
 	extern long copy_from_kernel_nofault(void *dst, const void *src, size_t size);
 
 	constexpr int max_iter = 100000;
-	constexpr char sym[] = "kallsyms_lookup_name+0x0/";
+	constexpr char sym[] = "kallsyms_lookup_name+";
 	uintptr_t anchor = ptr;
 
 	char buf[KSYM_SYMBOL_LEN];
@@ -58,21 +58,45 @@ start_r:
 		goto inc;
 
 	if (strstarts(buf, sym))
-		goto found;
+		goto found_candidate;
 
-inc:
+inc: // assumes that kallsyms_lookup_name is atleast 8 insns
 	if (up) {
 		iter++;
-		curr = anchor + sizeof(uint32_t) * iter;
+		curr = anchor + sizeof(uint32_t) * 8 * iter;
 		up = false;
 	} else {
-		curr = anchor - sizeof(uint32_t) * iter;
+		curr = anchor - sizeof(uint32_t) * 8 * iter;
 		up = true;
 	}
 
 	goto start_r;
 
-found:
+found_candidate:;
+	char *sl = strchr(buf, '/');
+	if (!sl)
+		goto inc;
+	
+	sl[0] = 0;
+
+	char *pl = strchr(buf, '+');
+	if (!pl)
+		goto inc;
+
+	pr_info("candidate found: %s @ 0x%lx\n", buf, curr);
+
+	unsigned long offset;
+	if (kstrtoul(pl + 1, 0, &offset))
+		goto inc;
+
+	uintptr_t test_p = curr - offset;
+	if (!(sprint_symbol(buf, test_p) > 0))
+		goto inc;
+
+	if (!strstr(buf, "+0x0"))
+		goto inc;
+
+	curr = curr - offset;
 	pr_info("%s: %s found at 0x%lx iter: %d\n", __func__, buf, curr, iter);
 	*(volatile uintptr_t *)&kallsyms_lookup_name_fn = curr;
 	smp_mb();

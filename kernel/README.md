@@ -13,6 +13,7 @@ Usage (if built-in):
 - just compile it in :^)
 
 Compatibility:
+- CONFIG_ARM64=y
 - CONFIG_KALLSYMS=y
 - CONFIG_KALLSYMS_ALL=y (if used as LKM)
 
