@@ -167,9 +167,13 @@ static size_t get_ksym_size(uintptr_t symbol_addr, size_t retfail)
 	unsigned long offset = 0;
 	unsigned long symbolsize = 0;
 
-	kallsyms_lookup_size_offset(symbol_addr, &symbolsize, &offset);
+	// means lookup failed, just return retfail
+	if (!kallsyms_lookup_size_offset(symbol_addr, &symbolsize, &offset))
+		return retfail;		
+
 	if (!symbolsize && !offset)
 		return retfail;
+
 	return symbolsize;
 }
 
