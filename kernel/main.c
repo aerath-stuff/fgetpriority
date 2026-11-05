@@ -102,7 +102,7 @@ static int bootstrap_kallsyms_lookup_name(uintptr_t ptr)
 	extern long copy_from_kernel_nofault(void *dst, const void *src, size_t size);
 
 	constexpr int max_iter = 400000;
-	constexpr char sym[] = "kallsyms_lookup_name";
+	constexpr char sym[] = "kallsyms_lookup_name+";
 	uintptr_t anchor = ptr;
 
 	char buf[KSYM_SYMBOL_LEN];
