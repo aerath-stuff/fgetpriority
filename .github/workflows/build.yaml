@@ -44,6 +44,7 @@ jobs:
             cd kernel/
             export KDIR=$KERNEL_SRC
             make -f Makefile.ddk modules
+            llvm-strip -d fgetpriority.ko
             mv fgetpriority.ko ${{ matrix.kmi }}_arm64_fgetpriority.ko
 
       - name: Upload ${{ matrix.kmi }}
