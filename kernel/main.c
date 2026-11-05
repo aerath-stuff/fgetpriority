@@ -45,6 +45,15 @@ static __nocfi unsigned long __kallsyms_lookup_name(const char *name)
 #define kallsyms_lookup_name __kallsyms_lookup_name
 
 /**
+ * user suppliable kallsyms_lookup_name address
+ *
+ * kind of needed on KP users. kernel addresses are shifted hugely.
+ * I'm not scanning shit that huge.
+ */
+module_param(kallsyms_lookup_name_fn, ulong, 0000);
+MODULE_PARM_DESC(kallsyms_lookup_name_fn, "kallsyms_lookup_name symaddr");
+
+/**
  *  kallsyms_lookup_size_offset from sprint_symbol actually
  */
 static int compat_kallsyms_lookup_size_offset(unsigned long addr, unsigned long *symbolsize, unsigned long *offset)
@@ -92,8 +101,8 @@ static int bootstrap_kallsyms_lookup_name(uintptr_t ptr)
 {
 	extern long copy_from_kernel_nofault(void *dst, const void *src, size_t size);
 
-	constexpr int max_iter = 100000;
-	constexpr char sym[] = "kallsyms_lookup_name+";
+	constexpr int max_iter = 400000;
+	constexpr char sym[] = "kallsyms_lookup_name";
 	uintptr_t anchor = ptr;
 
 	char buf[KSYM_SYMBOL_LEN];
@@ -103,13 +112,17 @@ static int bootstrap_kallsyms_lookup_name(uintptr_t ptr)
 	uintptr_t curr = ptr;
 	bool up = true;
 
+	// record
+	uintptr_t r_high = 0x0;
+	uintptr_t r_low = 0x0;
+
 	/**
 	 * radiating scan, expect some cache trashing.
 	 * however for this one it is worth it.
 	 */
 start_r:
 	if (iter >= max_iter) {
-		pr_info("%s: bootsrap fail! iter: %d\n", __func__, iter);
+		pr_info("%s: bootsrap fail! iter: %d range: 0x%lx ~ 0x%lx\n", __func__, iter, r_high, r_low);
 		return -ERANGE;
 	}
 
@@ -122,13 +135,15 @@ start_r:
 	if (strstarts(buf, sym))
 		goto found_candidate;
 
-inc: // assumes that kallsyms_lookup_name is atleast 8 insns
+inc: // assumes that kallsyms_lookup_name is atleast 32 insns
 	if (up) {
 		iter++;
-		curr = anchor + sizeof(uint32_t) * 8 * iter;
+		r_high = curr;
+		curr = anchor + sizeof(uint32_t) * 16 * iter;
 		up = false;
 	} else {
-		curr = anchor - sizeof(uint32_t) * 8 * iter;
+		r_low = curr;
+		curr = anchor - sizeof(uint32_t) * 16 * iter;
 		up = true;
 	}
 
@@ -159,7 +174,7 @@ found_candidate:;
 		goto inc;
 
 	curr = curr - offset;
-	pr_info("%s: %s found at 0x%lx iter: %d\n", __func__, buf, curr, iter);
+	pr_info("%s: %s found at 0x%lx iter: %d range: 0x%lx ~ 0x%lx\n", __func__, buf, curr, iter, r_high, r_low);
 	*(volatile uintptr_t *)&kallsyms_lookup_name_fn = curr;
 	smp_mb();
 	return 0;
@@ -167,13 +182,36 @@ found_candidate:;
 
 static int bootstrap_module(void)
 {
+	/**
+	 * holy fucking shit. KP shifts the kernel so much that
+	 * it is unplausible to scan at this point. reee
+	 *
+	 * this serves as a fallback for now.
+	 * will out figure shit later. (261105)
+	 */
+	if (!kallsyms_lookup_name_fn)
+		goto bootstrap;
+		
+	constexpr char ksym[] = "kallsyms_lookup_name";
+	char buf[KSYM_SYMBOL_LEN];
+
+	if (sprint_symbol(buf, kallsyms_lookup_name_fn) < sizeof(ksym))
+		goto bootstrap;
+
+	if (!strstarts(buf, ksym))
+		goto bootstrap;
+
+	pr_info("kallsyms_lookup_name: 0x%lx (via module_param)\n", kallsyms_lookup_name_fn);
+	goto resolve;
+
+bootstrap:;
 	constexpr char sym[] = "sprint_symbol";
 	uintptr_t addr = (uintptr_t)&sprint_symbol;
 	pr_info("%s: %s @ 0x%lx \n", __func__, sym, addr);
 	int err = bootstrap_kallsyms_lookup_name(addr);
 	if (err)
 		return err;
-
+resolve:
 	aarch64_insn_gen_branch_imm_fn = (uintptr_t)kallsyms_lookup_name("aarch64_insn_gen_branch_imm");
 	if (!aarch64_insn_gen_branch_imm_fn)
 		return -ENOENT;
