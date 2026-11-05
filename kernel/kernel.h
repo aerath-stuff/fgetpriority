@@ -42,6 +42,7 @@
 #include <linux/thread_info.h>
 #include <linux/stop_machine.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
