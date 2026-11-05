@@ -92,8 +92,8 @@ static int bootstrap_kallsyms_lookup_name(uintptr_t ptr)
 {
 	extern long copy_from_kernel_nofault(void *dst, const void *src, size_t size);
 
-	constexpr int max_iter = 100000;
-	constexpr char sym[] = "kallsyms_lookup_name+";
+	constexpr int max_iter = 400000;
+	constexpr char sym[] = "kallsyms_lookup_name";
 	uintptr_t anchor = ptr;
 
 	char buf[KSYM_SYMBOL_LEN];
@@ -103,13 +103,17 @@ static int bootstrap_kallsyms_lookup_name(uintptr_t ptr)
 	uintptr_t curr = ptr;
 	bool up = true;
 
+	// record
+	uintptr_t r_high = 0x0;
+	uintptr_t r_low = 0x0;
+
 	/**
 	 * radiating scan, expect some cache trashing.
 	 * however for this one it is worth it.
 	 */
 start_r:
 	if (iter >= max_iter) {
-		pr_info("%s: bootsrap fail! iter: %d\n", __func__, iter);
+		pr_info("%s: bootsrap fail! iter: %d range: 0x%lx ~ 0x%lx\n", __func__, iter, r_high, r_low);
 		return -ERANGE;
 	}
 
@@ -122,13 +126,15 @@ start_r:
 	if (strstarts(buf, sym))
 		goto found_candidate;
 
-inc: // assumes that kallsyms_lookup_name is atleast 8 insns
+inc: // assumes that kallsyms_lookup_name is atleast 32 insns
 	if (up) {
 		iter++;
-		curr = anchor + sizeof(uint32_t) * 8 * iter;
+		r_high = curr;
+		curr = anchor + sizeof(uint32_t) * 16 * iter;
 		up = false;
 	} else {
-		curr = anchor - sizeof(uint32_t) * 8 * iter;
+		r_low = curr;
+		curr = anchor - sizeof(uint32_t) * 16 * iter;
 		up = true;
 	}
 
@@ -159,7 +165,7 @@ found_candidate:;
 		goto inc;
 
 	curr = curr - offset;
-	pr_info("%s: %s found at 0x%lx iter: %d\n", __func__, buf, curr, iter);
+	pr_info("%s: %s found at 0x%lx iter: %d range: 0x%lx ~ 0x%lx\n", __func__, buf, curr, iter, r_high, r_low);
 	*(volatile uintptr_t *)&kallsyms_lookup_name_fn = curr;
 	smp_mb();
 	return 0;
