@@ -45,6 +45,15 @@ static __nocfi unsigned long __kallsyms_lookup_name(const char *name)
 #define kallsyms_lookup_name __kallsyms_lookup_name
 
 /**
+ * user suppliable kallsyms_lookup_name address
+ *
+ * kind of needed on KP users. kernel addresses are shifted hugely.
+ * I'm not scanning shit that huge.
+ */
+module_param(kallsyms_lookup_name_fn, ulong, 0000);
+MODULE_PARM_DESC(kallsyms_lookup_name_fn, "kallsyms_lookup_name symaddr");
+
+/**
  *  kallsyms_lookup_size_offset from sprint_symbol actually
  */
 static int compat_kallsyms_lookup_size_offset(unsigned long addr, unsigned long *symbolsize, unsigned long *offset)
@@ -173,13 +182,36 @@ found_candidate:;
 
 static int bootstrap_module(void)
 {
+	/**
+	 * holy fucking shit. KP shifts the kernel so much that
+	 * it is unplausible to scan at this point. reee
+	 *
+	 * this serves as a fallback for now.
+	 * will out figure shit later. (261105)
+	 */
+	if (!kallsyms_lookup_name_fn)
+		goto bootstrap;
+		
+	constexpr char ksym[] = "kallsyms_lookup_name";
+	char buf[KSYM_SYMBOL_LEN];
+
+	if (sprint_symbol(buf, kallsyms_lookup_name_fn) < sizeof(ksym))
+		goto bootstrap;
+
+	if (!strstarts(buf, ksym))
+		goto bootstrap;
+
+	pr_info("kallsyms_lookup_name: 0x%lx (via module_param)\n", kallsyms_lookup_name_fn);
+	goto resolve;
+
+bootstrap:;
 	constexpr char sym[] = "sprint_symbol";
 	uintptr_t addr = (uintptr_t)&sprint_symbol;
 	pr_info("%s: %s @ 0x%lx \n", __func__, sym, addr);
 	int err = bootstrap_kallsyms_lookup_name(addr);
 	if (err)
 		return err;
-
+resolve:
 	aarch64_insn_gen_branch_imm_fn = (uintptr_t)kallsyms_lookup_name("aarch64_insn_gen_branch_imm");
 	if (!aarch64_insn_gen_branch_imm_fn)
 		return -ENOENT;
