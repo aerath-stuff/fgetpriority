@@ -19,12 +19,74 @@ static_assert(1 == 0, "ARM64 only!");
 #endif
 
 #ifdef MODULE /* overrides for LKM */
+
+static uintptr_t aarch64_insn_patch_text_fn = 0x0;
+static __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
+{
+	assume(!!aarch64_insn_patch_text_fn);
+	return ((typeof(__aarch64_insn_patch_text) *)aarch64_insn_patch_text_fn)(addrs, insns, cnt);
+}
+#define aarch64_insn_patch_text __aarch64_insn_patch_text
+
+static uintptr_t aarch64_insn_gen_branch_imm_fn = 0x0;
+static __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsigned long addr, enum aarch64_insn_branch_type type)
+{
+	assume(!!aarch64_insn_gen_branch_imm_fn);
+	return ((typeof(__aarch64_insn_gen_branch_imm) *)aarch64_insn_gen_branch_imm_fn)(pc, addr, type);
+}
+#define aarch64_insn_gen_branch_imm __aarch64_insn_gen_branch_imm
+
 static uintptr_t kallsyms_lookup_name_fn = 0x0;
 static __nocfi unsigned long __kallsyms_lookup_name(const char *name)
 {
+	assume(!!kallsyms_lookup_name_fn);
 	return ((typeof (__kallsyms_lookup_name) *)kallsyms_lookup_name_fn)(name);
 }
 #define kallsyms_lookup_name __kallsyms_lookup_name
+
+/**
+ *  kallsyms_lookup_size_offset from sprint_symbol actually
+ */
+static int compat_kallsyms_lookup_size_offset(unsigned long addr, unsigned long *symbolsize, unsigned long *offset)
+{
+	char buf[KSYM_SYMBOL_LEN];
+	unsigned long u_sz;
+	unsigned long u_off;
+
+	if (!addr || !symbolsize || !offset)
+		return 0;
+
+	if (!(sprint_symbol(buf, addr) > 0))
+		return 0;		
+	
+//	pr_info("symbol is: %s \n", buf);
+
+	char *c_sz = strchr(buf, '/');
+	if (!c_sz)
+		return 0;		
+
+	if (kstrtoul(c_sz + 1, 0, &u_sz))
+		return 0;		
+
+	// null '/', strtok called back.
+	c_sz[0] = 0;
+
+	char *c_off = strchr(buf, '+');
+	if (!c_off)
+		return 0;	
+
+	if (kstrtoul(c_off + 1, 0, &u_off))
+		return 0;		
+
+//	pr_info("symbol_size: %zu \n", u_sz);
+//	pr_info("symbol_offset: %zu \n", u_off);
+
+	*symbolsize = u_sz;
+	*offset = u_off;
+
+	return 1;
+}
+#define kallsyms_lookup_size_offset compat_kallsyms_lookup_size_offset
 
 static int bootstrap_kallsyms_lookup_name(uintptr_t ptr)
 {
@@ -103,69 +165,29 @@ found_candidate:;
 	return 0;
 }
 
-static __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
+static int bootstrap_module(void)
 {
-	typeof(__aarch64_insn_patch_text) *fn = kallsyms_lookup_name("aarch64_insn_patch_text");
-	if (!fn)
+	constexpr char sym[] = "sprint_symbol";
+	uintptr_t addr = (uintptr_t)&sprint_symbol;
+	pr_info("%s: %s @ 0x%lx \n", __func__, sym, addr);
+	int err = bootstrap_kallsyms_lookup_name(addr);
+	if (err)
+		return err;
+
+	aarch64_insn_gen_branch_imm_fn = (uintptr_t)kallsyms_lookup_name("aarch64_insn_gen_branch_imm");
+	if (!aarch64_insn_gen_branch_imm_fn)
 		return -ENOENT;
-	return fn(addrs, insns, cnt);
-}
-#define aarch64_insn_patch_text __aarch64_insn_patch_text
 
-static __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsigned long addr, enum aarch64_insn_branch_type type)
-{
-	typeof(__aarch64_insn_gen_branch_imm) *fn = kallsyms_lookup_name("aarch64_insn_gen_branch_imm");
-	if (!fn)
+	aarch64_insn_patch_text_fn = (uintptr_t)kallsyms_lookup_name("aarch64_insn_patch_text");
+	if (!aarch64_insn_patch_text_fn)
 		return -ENOENT;
-	return fn(pc, addr, type);
+
+	smp_mb();
+	return 0;
 }
-#define aarch64_insn_gen_branch_imm __aarch64_insn_gen_branch_imm
-
-/**
- *  kallsyms_lookup_size_offset from sprint_symbol actually
- */
-static int compat_kallsyms_lookup_size_offset(unsigned long addr, unsigned long *symbolsize, unsigned long *offset)
-{
-	char buf[KSYM_SYMBOL_LEN];
-	unsigned long u_sz;
-	unsigned long u_off;
-
-	if (!addr || !symbolsize || !offset)
-		return 0;
-
-	if (!(sprint_symbol(buf, addr) > 0))
-		return 0;		
-	
-//	pr_info("symbol is: %s \n", buf);
-
-	char *c_sz = strchr(buf, '/');
-	if (!c_sz)
-		return 0;		
-
-	if (kstrtoul(c_sz + 1, 0, &u_sz))
-		return 0;		
-
-	// null '/', strtok called back.
-	c_sz[0] = 0;
-
-	char *c_off = strchr(buf, '+');
-	if (!c_off)
-		return 0;	
-
-	if (kstrtoul(c_off + 1, 0, &u_off))
-		return 0;		
-
-//	pr_info("symbol_size: %zu \n", u_sz);
-//	pr_info("symbol_offset: %zu \n", u_off);
-
-	*symbolsize = u_sz;
-	*offset = u_off;
-
-	return 1;
-}
-#define kallsyms_lookup_size_offset compat_kallsyms_lookup_size_offset
 
 static struct kobject *mod_kobj_parent_backup = nullptr;
+
 #endif // MODULE
 
 // override kprobe reg and unreg
@@ -230,14 +252,10 @@ static int __init fgetpriority_init(void)
 	pr_info("init: Hello World!\n");
 
 #ifdef MODULE
-	constexpr char sym[] = "sprint_symbol";
-	uintptr_t addr = (uintptr_t)&sprint_symbol;
-	pr_info("%s: %s @ 0x%lx \n", __func__, sym, addr);
-	int err = bootstrap_kallsyms_lookup_name(addr);
+	int err = bootstrap_module();
 	if (err)
 		return err;
 #endif
-
 	int ret = getpriority_hook_init();
 	pr_info("init: ret: %d\n", ret);
 	if (!ret)
