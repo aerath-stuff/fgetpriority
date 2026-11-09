@@ -180,10 +180,6 @@ found_candidate:;
 	return 0;
 }
 
-// fwd
-static uintptr_t register_kprobe_fn;
-static uintptr_t unregister_kprobe_fn;
-static uintptr_t kp_kallsyms_lookup_name(const char *name);
 static int resolve_init_user_ns(void);
 
 static int bootstrap_module(void)
@@ -211,23 +207,6 @@ static int bootstrap_module(void)
 	goto resolve;
 
 bootstrap:;
-	register_kprobe_fn = symbol_get(register_kprobe);
-	unregister_kprobe_fn = symbol_get(unregister_kprobe);
-	if (!register_kprobe_fn || !unregister_kprobe_fn) {
-		pr_info("kprobe symbols missing or not exported! \n");
-		goto bootstrap_scan;
-	}
-
-	// no-op for kernel symbols, keep as a reminder
-	// symbol_put(register_kprobe);
-	// symbol_put(unregister_kprobe);
-
-	// now we can try to get kallsyms_lookup_name via kp
-	kallsyms_lookup_name_fn = kp_kallsyms_lookup_name("kallsyms_lookup_name");
-	if (kallsyms_lookup_name_fn)
-		goto resolve;
-
-bootstrap_scan:;
 	constexpr char sym[] = "sprint_symbol";
 	uintptr_t addr = (uintptr_t)&sprint_symbol;
 	pr_info("%s: %s @ 0x%lx \n", __func__, sym, addr);
@@ -256,40 +235,24 @@ static struct kobject *mod_kobj_parent_backup = nullptr;
 
 #endif // MODULE
 
-static uintptr_t register_kprobe_fn = 0x0;
+// override kprobe reg and unreg
 static __nocfi int __register_kprobe(struct kprobe *p)
 {
-	if (!register_kprobe_fn)
-		register_kprobe_fn = (uintptr_t)kallsyms_lookup_name("register_kprobe");
-	if (!register_kprobe_fn)
+	typeof(__register_kprobe) *fn = kallsyms_lookup_name("register_kprobe");
+	if (!fn)
 		return -ENOENT;
-	return ((typeof(__register_kprobe) *)register_kprobe_fn)(p);
+	return fn(p);
 }
 #define register_kprobe __register_kprobe
 
-static uintptr_t unregister_kprobe_fn = 0x0;
 static __nocfi void __unregister_kprobe(struct kprobe *p)
 {
-	if (!unregister_kprobe_fn)
-		unregister_kprobe_fn = (uintptr_t)kallsyms_lookup_name("unregister_kprobe");
-	if (!unregister_kprobe_fn)
+	typeof(__unregister_kprobe) *fn = kallsyms_lookup_name("unregister_kprobe");
+	if (!fn)
 		return;
-	((typeof(__unregister_kprobe) *)unregister_kprobe_fn)(p);
+	fn(p);
 }
 #define unregister_kprobe __unregister_kprobe
-
-static uintptr_t kp_kallsyms_lookup_name(const char *name)
-{
-	struct kprobe kp = { .symbol_name = name };
-	if (!!register_kprobe(&kp))
-		return 0x0;
-
-	uintptr_t addr = (uintptr_t)kp.addr;
-	unregister_kprobe(&kp);
-
-	pr_info("%s: success! %s at 0x%lx\n", __func__, name, addr);
-	return addr;
-}
 
 static size_t get_ksym_size(uintptr_t symbol_addr, size_t retfail)
 {
