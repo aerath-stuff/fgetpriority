@@ -62,6 +62,7 @@ static __always_inline bool getpriority_should_swap(int who)
 		if (ns && ns != init_ns_p())
 		{
 			kuid_t host_kuid = make_kuid(ns, 0);
+			if (uid_valid(host_kuid))
 				cuid = from_kuid(init_ns_p(), host_kuid);
 		}
 	}
