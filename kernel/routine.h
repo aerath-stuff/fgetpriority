@@ -24,6 +24,24 @@ static const int AID_USER_OFFSET = 100000;
 #define is_seccomp_enabled() (!!current->seccomp.mode)
 #endif
 
+#ifdef MODULE
+static uintptr_t init_ns_ksym_p __read_mostly = 0x0;
+static __always_inline struct user_namespace *init_ns_p(void)
+{
+	return (struct user_namespace *)init_ns_ksym_p;
+}
+static int resolve_init_user_ns(void)
+{ 
+	init_ns_ksym_p = (uintptr_t)kallsyms_lookup_name("init_user_ns");
+	if (!init_ns_ksym_p)
+		return -ENOENT;
+	return 0;
+}
+#else
+#define init_ns_p() ({ &init_user_ns; })
+static int resolve_init_user_ns(void) { return 0; }
+#endif
+
 static __always_inline bool getpriority_should_swap(int who)
 {
 	if (unlikely(!is_seccomp_enabled()))
@@ -41,22 +59,21 @@ static __always_inline bool getpriority_should_swap(int who)
 	if (unlikely(cuid >= MIN_ISOLATED_PROCESS_UID))
 	{
 		struct user_namespace *ns = current_cred()->user_ns;
-		if (ns && ns != &init_user_ns)
+		if (ns && ns != init_ns_p())
 		{
 			kuid_t host_kuid = make_kuid(ns, 0);
-			if (uid_valid(host_kuid))
-				cuid = from_kuid(&init_user_ns, host_kuid);
+				cuid = from_kuid(init_ns_p(), host_kuid);
 		}
 	}
 
 	if (unlikely(who >= MIN_ISOLATED_PROCESS_UID))
 	{
 		struct user_namespace *ns = current_cred()->user_ns;
-		if (ns && ns != &init_user_ns)
+		if (ns && ns != init_ns_p())
 		{
 			kuid_t host_kuid = make_kuid(ns, 0);
 			if (uid_valid(host_kuid))
-				who = from_kuid(&init_user_ns, host_kuid);
+				who = from_kuid(init_ns_p(), host_kuid);
 		}
 	}
 

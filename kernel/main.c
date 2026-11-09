@@ -184,6 +184,7 @@ found_candidate:;
 static uintptr_t register_kprobe_fn;
 static uintptr_t unregister_kprobe_fn;
 static uintptr_t kp_kallsyms_lookup_name(const char *name);
+static int resolve_init_user_ns(void);
 
 static int bootstrap_module(void)
 {
@@ -243,6 +244,11 @@ resolve:
 		return -ENOENT;
 
 	smp_mb();
+
+	int r = resolve_init_user_ns();
+	if (r)
+		return r;
+
 	return 0;
 }
 
