@@ -7,36 +7,37 @@
  * published by the Free Software Foundation.
  *
  */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpragmas"
-#pragma GCC diagnostic ignored "-Winfinite-recursion"
-
 #if defined(__GNUC__) && !defined(__clang__)
 #define KEEP_SYMBOL_NO_TAIL __attribute__((used)) noinline __attribute__((optimize("no-optimize-sibling-calls")))
 #else
 #define KEEP_SYMBOL_NO_TAIL __attribute__((used)) noinline __attribute__((disable_tail_calls))
 #endif
 
-#ifdef MODULE /* stub for free_uid() */
+#ifdef MODULE
+// Keep the calls opaque to the compiler until the stubs are patched.
 __asm__ (
 	"\n .text			"
 	"\n .p2align 2			"
+	"\n .global gp_find_user		"
+	"\n gp_find_user:		"
+	"\n brk #1			"
 	"\n .global gp_free_uid		"
 	"\n gp_free_uid:		"
 	"\n brk #1			"
 );					
+KEEP_SYMBOL_NO_TAIL struct user_struct *gp_find_user(kuid_t uid);
 KEEP_SYMBOL_NO_TAIL void gp_free_uid(struct user_struct *up);
 
 #else /* ! MODULE */
+extern struct user_struct *find_user(kuid_t uid);
 extern void free_uid(struct user_struct *);
+#define gp_find_user find_user
 #define gp_free_uid free_uid
 #endif /* ! MODULE */
 
 KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 {
-	// we can actually return early if we want to
-	// but, this makes sure everything does the same work.
-	struct user_struct *ret = gphook_find_user(uid);
+	struct user_struct *ret = gp_find_user(uid);
 	if (getpriority_should_swap(*(int *)&uid)) {
 		gp_free_uid(ret);
 		return nullptr;
@@ -45,7 +46,6 @@ KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 	return ret;
 }
 
-#pragma GCC diagnostic pop
 #undef KEEP_SYMBOL_NO_TAIL
 
 #define estimate_sz	(256 * 4)
@@ -59,13 +59,6 @@ KEEP_SYMBOL_NO_TAIL struct user_struct *gphook_find_user(kuid_t uid)
 })
 #endif
 
-#define self_patch_hook(hook_fn, tgt) ({					\
-	uintptr_t hook_p = kernel_function_lookup(hook_fn);			\
-	int ret = arm64_b_or_bl_patch(hook_p, get_ksym_size(hook_p, estimate_sz), hook_p, tgt);	\
-	pr_info("patch_hook: %s ret: %d \n", #hook_fn, ret);			\
-	ret;									\
-})
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
 #define syscall_lookup(name) kallsyms_lookup_name("__arm64_" name)
 #else
@@ -78,16 +71,21 @@ static __init int getpriority_hook_init(void)
 	if (!symbol_addr)
 		return -ENOENT;
 
-	int ret = self_patch_hook(gphook_find_user, symbol_addr);
+	int ret;
+#ifdef MODULE
+	// With CFI, the function pointer can point to a jump table entry.
+	uintptr_t hook_body = kernel_function_lookup(gphook_find_user);
+	size_t hook_size = get_ksym_size(hook_body, estimate_sz);
+	ret = arm64_b_or_bl_patch(hook_body, hook_size, kernel_function_lookup(gp_find_user), symbol_addr);
+	pr_info("patch_hook: gphook_find_user ret: %d\n", ret);
 	if (ret)
 		return ret;
 
-#ifdef MODULE
 	uintptr_t symbol_addr2 = kallsyms_lookup_name("free_uid");
 	if (!symbol_addr2)
 		return -ENOENT;
 
-	ret = arm64_b_or_bl_patch(gphook_find_user, get_ksym_size(gphook_find_user, estimate_sz), kernel_function_lookup(gp_free_uid), (uintptr_t)symbol_addr2);
+	ret = arm64_b_or_bl_patch(hook_body, hook_size, kernel_function_lookup(gp_free_uid), symbol_addr2);
 	if (ret)
 		return ret;
 #endif
