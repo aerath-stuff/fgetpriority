@@ -87,7 +87,11 @@ static __init int getpriority_hook_init(void)
 	if (!symbol_addr2)
 		return -ENOENT;
 
-	ret = arm64_b_or_bl_patch(gphook_find_user, get_ksym_size(gphook_find_user, estimate_sz), kernel_function_lookup(gp_free_uid), (uintptr_t)symbol_addr2);
+	uintptr_t gphook_find_user_p = kallsyms_lookup_name("gphook_find_user");
+	if (!gphook_find_user_p)
+		return -ENOENT;
+
+	ret = arm64_b_or_bl_patch(gphook_find_user_p, get_ksym_size(gphook_find_user_p, estimate_sz), kernel_function_lookup(gp_free_uid), (uintptr_t)symbol_addr2);
 	if (ret)
 		return ret;
 #endif
