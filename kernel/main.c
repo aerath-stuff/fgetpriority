@@ -287,7 +287,7 @@ __weak long copy_from_kernel_nofault(void *dst, const void *src, size_t size)
 #endif
 
 #include "arch.h"
-#include "arm64_branch_insn.h"
+#include "arm64_branch_patch.h"
 #include "routine.h"
 #include "routine_kp.c"
 #include "routine_raw.c"

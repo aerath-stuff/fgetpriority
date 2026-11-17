@@ -2,17 +2,14 @@
 /*
  * Copyright (C) 2026 \xx
  *
- * This file is a downstream extension and NOT affiliated, endorsed by,
- * or maintained by the official KernelSU developers.
- *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
  */
 
-#ifndef __KSU_H_ARM64_BL_PATCH
-#define __KSU_H_ARM64_BL_PATCH
+#ifndef __H_ARM64_BRANCH_PATCH
+#define __H_ARM64_BRANCH_PATCH
 
 #include <linux/version.h>
 #include <linux/uaccess.h>
@@ -23,7 +20,7 @@
 #include <asm/patching.h>
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0) || defined(MODULE)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
 __weak s32 aarch64_get_branch_offset(u32 insn)
 {
 	// 26-bit signed relative jump offset
@@ -40,7 +37,7 @@ __weak s32 aarch64_get_branch_offset(u32 insn)
 #endif
 
 /**
- * arm64_branch_patch(): hunt and patch first b or bl insn found with target
+ * arm64_branch_patch(): hunt and patch all b or bl insn found within target
  *
  * @target_callsite: callsite on where to start scanning for (ptr / fn_ptr)
  * @target_width: how far to scan for (bytes / ptrdiff)
@@ -71,11 +68,21 @@ nodiscard static noinline int arm64_branch_patch(uintptr_t target_callsite, ptrd
 
 	might_sleep();
 
+	constexpr ptrdiff_t bl_max_delta = (1L << 25) * sizeof(uint32_t); // 26 bits signed * insn size
 	uintptr_t start_addr = (uintptr_t)target_callsite;
 	uintptr_t end_addr = start_addr + target_width;
+
+	ptrdiff_t hook_to_start = (ptrdiff_t)hook_addr - (ptrdiff_t)start_addr;
+	ptrdiff_t hook_to_end = (ptrdiff_t)hook_addr - (ptrdiff_t)end_addr;
+	if (__builtin_labs(hook_to_start) >= bl_max_delta || __builtin_labs(hook_to_end) >= bl_max_delta) {
+		pr_info("%s: scan window start: 0x%lx end: 0x%lx out of range to hook: 0x%lx!\n", __func__, start_addr, end_addr, hook_addr);
+		return -ERANGE;
+	}
+//	pr_info("%s: scan window start: 0x%lx end: 0x%lx in range to hook: 0x%lx deltas: %ld / %ld \n", __func__, start_addr, end_addr, hook_addr, hook_to_start, hook_to_end);
+
 	uintptr_t curr_addr = start_addr;
 	uint32_t raw_instruction; // arm64 wordsize
-	constexpr ptrdiff_t bl_max_delta = (1L << 25) * sizeof(uint32_t); // 26 bits signed * insn size
+	unsigned int patched = 0;
 
 start_scan:
 	if (curr_addr >= end_addr)
@@ -111,13 +118,9 @@ start_scan:
 
 	pr_info("%s: found call site at 0x%lx w/ .inst 0x%x \n", __func__, curr_addr, raw_instruction);
 
-	ptrdiff_t delta = 0;
-	if (hook_addr > curr_addr)
-		delta = hook_addr - curr_addr;
-	else
-		delta = curr_addr - hook_addr;
-		
-	if (delta >= bl_max_delta) {
+	ptrdiff_t delta = hook_addr - curr_addr;
+	if (__builtin_labs(delta) >= bl_max_delta) {
+		__builtin_unreachable(); // see range check above
 		pr_info("%s: callsite 0x%lx to hook 0x%lx out of range! (delta: %ld bytes)\n",  __func__, curr_addr, hook_addr, delta);
 		return -ERANGE;
 	}
@@ -135,20 +138,25 @@ start_scan:
 
 	int res = aarch64_insn_patch_text(arr_addr, arr_insn, 1);
 	pr_info("%s: patched callsite: 0x%lx ret: %d\n", __func__, curr_addr, res);
-
-	return res;
+	patched++;
 
 step_up:
 	curr_addr = curr_addr + sizeof(uint32_t);
 	goto start_scan;
 
 bail:
-	pr_info("%s: callsite instruction not found!\n", __func__);
-	return -ENOENT;
+	if (!patched) {
+		pr_info("%s: callsite instruction not found!\n", __func__);
+		return -ENOENT;
+	}
+
+	if (patched > 1)
+		pr_info("%s: patch count: %d\n", __func__, patched);
+	return 0;
 }
 
 #define arm64_b_patch(tgt, width, symaddr, hookaddr)		arm64_branch_patch(tgt, width, symaddr, hookaddr, BRANCH_TYPE_B)
 #define arm64_bl_patch(tgt, width, symaddr, hookaddr)		arm64_branch_patch(tgt, width, symaddr, hookaddr, BRANCH_TYPE_BL)
 #define arm64_b_or_bl_patch(tgt, width, symaddr, hookaddr)	arm64_branch_patch(tgt, width, symaddr, hookaddr, BRANCH_TYPE_B_OR_BL)
 
-#endif // __KSU_H_ARM64_BL_PATCH
+#endif // __H_ARM64_BRANCH_PATCH
