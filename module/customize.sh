@@ -21,7 +21,7 @@ kmi_from_uname() {
   if [ -n "$_branch" ]; then
     # The device names its branch, so only that branch's module will do: one from another branch
     # has a different vermagic and the kernel would refuse it anyway.
-    echo "${_branch}-${_ver}"
+    KMI="${_branch}-${_ver}"
     return
   fi
 
@@ -32,11 +32,14 @@ kmi_from_uname() {
     [ "${_c#*-}" = "$_ver" ] && _cands="$_cands $_c"
   done
   _cands="${_cands# }"
+  KMI="${_cands%% *}"
   [ "$(echo "$_cands" | wc -w)" -gt 1 ] && ui_print "! $(uname -r) fits $_cands; taking the first"
-  echo "${_cands%% *}"
 }
 
-KMI="$(kmi_from_uname)"
+# directly call the function instead of using a subshell, so any outputs from kmi_from_uname will not pollute KMI
+KMI=""
+kmi_from_uname
+
 if [ -z "$KMI" ] && command -v ksud >/dev/null; then
     KMI=$(ksud boot-info current-kmi 2>/dev/null)
 fi
