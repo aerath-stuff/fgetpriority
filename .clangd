@@ -1,0 +1,7 @@
+CompileFlags:
+  CompilationDatabase: .cache/clangd
+  Add:
+    - -Wno-unknown-warning-option
+
+Index:
+  Background: Build

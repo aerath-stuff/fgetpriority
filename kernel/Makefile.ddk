@@ -1,16 +1,33 @@
-CONFIG_NAME := FGETPRIORITY
-MODULE_NAME := fgetpriority
-obj-$(CONFIG_$(CONFIG_NAME)) += $(MODULE_NAME).o
-$(MODULE_NAME)-m := main.o
-
-export CONFIG_$(CONFIG_NAME)=m
+export CONFIG_FGETPRIORITY := m
 
 MDIR := $(realpath $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+KDIR ?= $(KERNEL_SRC)
 
-$(info -- KDIR: $(KDIR))
-$(info -- MDIR: $(MDIR))
+ARCH ?= arm64
+LLVM ?= 1
+LLVM_IAS ?= 1
+EXTRA_CFLAGS ?= -w
+
+KBUILD_ARGS = -C "$(KDIR)" M="$(MDIR)" ARCH="$(ARCH)" LLVM="$(LLVM)" LLVM_IAS="$(LLVM_IAS)"
+
+.PHONY: modules clean compile_commands compile_commands.json
 
 modules:
-	make -C $(KDIR) M=$(MDIR) EXTRA_CFLAGS="-w" modules
+	$(if $(strip $(KDIR)),,$(error KDIR (or KERNEL_SRC) is not set. Specify KDIR=/path/to/kernel or run ./build_docker.sh))
+	$(info -- KDIR: $(KDIR))
+	$(info -- MDIR: $(MDIR))
+	$(MAKE) $(KBUILD_ARGS) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" modules
+
 clean:
-	make -C $(KDIR) M=$(MDIR) clean
+	$(if $(strip $(KDIR)),,$(error KDIR (or KERNEL_SRC) is not set))
+	$(info -- KDIR: $(KDIR))
+	$(info -- MDIR: $(MDIR))
+	$(MAKE) $(KBUILD_ARGS) clean
+
+compile_commands:
+	python3 "$(MDIR)/gen_compile_commands.py" \
+		$(if $(strip $(KDIR)),--kdir "$(KDIR)") \
+		$(if $(strip $(KMI)),--kmi "$(KMI)") \
+		$(if $(strip $(DDK_IMAGE)),--image "$(DDK_IMAGE)")
+
+compile_commands.json: compile_commands
