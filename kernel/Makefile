@@ -1,7 +1,15 @@
-# NOTE: unity build. single unit.
-
 obj-$(CONFIG_FGETPRIORITY) += fgetpriority.o
-fgetpriority-y := main.o
+fgetpriority-y := main.o \
+	resolver/lib/core.o resolver/lib/access.o resolver/lib/discover.o \
+	resolver/lib/symbol.o resolver/lib/slide.o resolver/lib/fastboot.o \
+	resolver/lib/hint.o resolver/lib/variant.o resolver/lib/anchor.o
+
+ccflags-y += -I$(src)/resolver/lib
+ccflags-y += $(call cc-option, -std=gnu11)
+ccflags-y += $(call cc-option, -Wno-declaration-after-statement)
+ccflags-y += $(call cc-option, -Wno-unused-variable)
+ccflags-y += $(call cc-option, -Wno-unused-function)
+ccflags-y += $(call cc-option, -Wno-strict-prototypes)
 
 # CFLAGS_main.o += -Weverything
 # CFLAGS_main.o += $(call cc-option, -Wno-unsafe-buffer-usage)

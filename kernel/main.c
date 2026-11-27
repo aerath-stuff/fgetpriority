@@ -20,6 +20,9 @@ static_assert(1 == 0, "ARM64 only!");
 
 #ifdef MODULE /* overrides for LKM */
 
+#include "core.h"
+#include "hint.h"
+
 static uintptr_t aarch64_insn_patch_text_fn = 0x0;
 static __nocfi int __aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
 {
@@ -36,22 +39,13 @@ static __nocfi u32 __aarch64_insn_gen_branch_imm(unsigned long pc, unsigned long
 }
 #define aarch64_insn_gen_branch_imm __aarch64_insn_gen_branch_imm
 
-static uintptr_t kallsyms_lookup_name_fn = 0x0;
-static __nocfi unsigned long __kallsyms_lookup_name(const char *name)
+static __nocfi unsigned long kr_name_to_addr(const char *name)
 {
-	assume(!!kallsyms_lookup_name_fn);
-	return ((typeof (__kallsyms_lookup_name) *)kallsyms_lookup_name_fn)(name);
+	if (kallrecon_klp)
+		return kallrecon_klp(name);
+	return kallsyms_name_to_addr(name);
 }
-#define kallsyms_lookup_name __kallsyms_lookup_name
-
-/**
- * user suppliable kallsyms_lookup_name address
- *
- * kind of needed on KP users. kernel addresses are shifted hugely.
- * I'm not scanning shit that huge.
- */
-module_param(kallsyms_lookup_name_fn, ulong, 0000);
-MODULE_PARM_DESC(kallsyms_lookup_name_fn, "kallsyms_lookup_name symaddr");
+#define kallsyms_lookup_name kr_name_to_addr
 
 /**
  *  kallsyms_lookup_size_offset from sprint_symbol actually
@@ -97,123 +91,26 @@ static int compat_kallsyms_lookup_size_offset(unsigned long addr, unsigned long 
 }
 #define kallsyms_lookup_size_offset compat_kallsyms_lookup_size_offset
 
-static int bootstrap_kallsyms_lookup_name(uintptr_t ptr)
-{
-	extern long copy_from_kernel_nofault(void *dst, const void *src, size_t size);
-
-	constexpr int max_iter = 400000;
-	constexpr char sym[] = "kallsyms_lookup_name+";
-	uintptr_t anchor = ptr;
-
-	char buf[KSYM_SYMBOL_LEN];
-	uint32_t ibuf;
-	int iter = 0;
-
-	uintptr_t curr = ptr;
-	bool up = true;
-
-	// record
-	uintptr_t r_high = 0x0;
-	uintptr_t r_low = 0x0;
-
-	/**
-	 * radiating scan, expect some cache trashing.
-	 * however for this one it is worth it.
-	 */
-start_r:
-	if (iter >= max_iter) {
-		pr_info("%s: bootsrap fail! iter: %d range: 0x%lx ~ 0x%lx\n", __func__, iter, r_high, r_low);
-		return -ERANGE;
-	}
-
-	if (!!copy_from_kernel_nofault(&ibuf, (void *)curr, sizeof(uint32_t)))
-		goto inc;
-
-	if (sprint_symbol(buf, curr) < sizeof(sym))
-		goto inc;
-
-	if (strstarts(buf, sym))
-		goto found_candidate;
-
-inc: // assumes that kallsyms_lookup_name is atleast 32 insns
-	if (up) {
-		iter++;
-		r_high = curr;
-		curr = anchor + sizeof(uint32_t) * 16 * iter;
-		up = false;
-	} else {
-		r_low = curr;
-		curr = anchor - sizeof(uint32_t) * 16 * iter;
-		up = true;
-	}
-
-	goto start_r;
-
-found_candidate:;
-	char *sl = strchr(buf, '/');
-	if (!sl)
-		goto inc;
-	
-	sl[0] = 0;
-
-	char *pl = strchr(buf, '+');
-	if (!pl)
-		goto inc;
-
-	pr_info("candidate found: %s @ 0x%lx\n", buf, curr);
-
-	unsigned long offset;
-	if (kstrtoul(pl + 1, 0, &offset))
-		goto inc;
-
-	uintptr_t test_p = curr - offset;
-	if (!(sprint_symbol(buf, test_p) > 0))
-		goto inc;
-
-	if (!strstr(buf, "+0x0"))
-		goto inc;
-
-	curr = curr - offset;
-	pr_info("%s: %s found at 0x%lx iter: %d range: 0x%lx ~ 0x%lx\n", __func__, buf, curr, iter, r_high, r_low);
-	*(volatile uintptr_t *)&kallsyms_lookup_name_fn = curr;
-	smp_mb();
-	return 0;
-}
-
 static int resolve_init_user_ns(void);
 
 static int bootstrap_module(void)
 {
-	/**
-	 * holy fucking shit. KP shifts the kernel so much that
-	 * it is unplausible to scan at this point. reee
-	 *
-	 * this serves as a fallback for now.
-	 * will out figure shit later. (261105)
-	 */
-	if (!kallsyms_lookup_name_fn)
-		goto bootstrap;
-		
-	constexpr char ksym[] = "kallsyms_lookup_name";
-	char buf[KSYM_SYMBOL_LEN];
+	find_kallsyms_base();
+	if (!klnum_val || !kallrecon_klp) {
+		const struct kallrecon_hint hint = {
+			.scan_back = 0x800000,
+		};
 
-	if (sprint_symbol(buf, kallsyms_lookup_name_fn) < sizeof(ksym))
-		goto bootstrap;
+		pr_info("kallrecon: scan failed (%d), retrying with 8MB range\n",
+			kallrecon_fail_reason());
+		kallrecon_supply(&hint);
+		if (!kallrecon_retry() || !klnum_val || !kallrecon_klp) {
+			pr_err("kallrecon: retry failed (%d)\n",
+			       kallrecon_fail_reason());
+			return -ENOENT;
+		}
+	}
 
-	if (!strstarts(buf, ksym))
-		goto bootstrap;
-
-	pr_info("kallsyms_lookup_name: 0x%lx (via module_param)\n", kallsyms_lookup_name_fn);
-	goto resolve;
-
-bootstrap:;
-	constexpr char sym[] = "sprint_symbol";
-	uintptr_t addr = (uintptr_t)&sprint_symbol;
-	pr_info("%s: %s @ 0x%lx \n", __func__, sym, addr);
-	int err = bootstrap_kallsyms_lookup_name(addr);
-	if (err)
-		return err;
-resolve:
 	aarch64_insn_gen_branch_imm_fn = (uintptr_t)kallsyms_lookup_name("aarch64_insn_gen_branch_imm");
 	if (!aarch64_insn_gen_branch_imm_fn)
 		return -ENOENT;
